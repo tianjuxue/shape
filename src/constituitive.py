@@ -36,9 +36,18 @@ def NeoHookeanEnergyFluctuation(variable, young_modulus, poisson_ratio, return_s
  
     if return_stress:
         first_pk_stress = fe.diff(energy, F)
-        return energy, first_pk_stress
+        sigma_v = von_mises(first_pk_stress, F)
+        return energy, first_pk_stress, sigma_v
 
     return energy
+
+
+def von_mises(first_pk_stress, F):
+	sigma = 1./fe.det(F) * fe.dot(first_pk_stress, F.T)
+	sigma_dev = fe.dev(sigma)
+	J2 = 1./2. * fe.inner(sigma_dev, sigma_dev)
+	return fe.sqrt(3*J2)
+
 
 
 # def strain(grad_u):
