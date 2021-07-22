@@ -26,7 +26,7 @@ from . import arguments
 #     def value_shape(self):
 #         return (2,)
 
-
+# exp = PoreExpression(self.L0, delta)
 
 
 
@@ -70,7 +70,7 @@ class PDECO(object):
 
         r_raw =  fe.sqrt(x1**2 + x2**2)
 
-        phi_0 = 0.35
+        phi_0 = 0.5
         theta = ufl.atan_2(x2, x1)
         r0 = self.L0 * np.sqrt(2 * phi_0) / fe.sqrt(np.pi * (2 + params[0]**2 + params[1]**2))
 
@@ -88,13 +88,12 @@ class PDECO(object):
 
 
     def mesh_deformation(self, delta):
-
         V = fe.FunctionSpace(self.mesh, 'P', 1)
         u, v = fe.TrialFunction(V), fe.TestFunction(V)
         a = -fe.inner(fe.grad(u), fe.grad(v)) * fe.dx
         l = da.Constant(0.) * v * fe.dx
-        mu_min = da.Constant(1., name="mu_min")
-        mu_max = da.Constant(2., name="mu_max")
+        mu_min = da.Constant(1, name="mu_min")
+        mu_max = da.Constant(2*1e2, name="mu_max")
         bcs = [da.DirichletBC(V, mu_min, self.exterior), da.DirichletBC(V, mu_max, self.interior)] 
         mu = da.Function(V, name="mesh deformation mu")
         da.solve(a == l, mu, bcs=bcs)
@@ -106,23 +105,31 @@ class PDECO(object):
         def epsilon(u):
             return fe.sym(fe.grad(u))
 
-        def sigma(u, mu=1., lmb=0.):
+        def sigma(u, mu, lmb):
             return 2 * mu * epsilon(u) + lmb * fe.tr(epsilon(u)) * fe.Identity(2)
 
-        # exp = PoreExpression(self.L0, delta)
+        stress = lambda u: sigma(u, mu, mu)
+
+        def penalty(u):
+            F = fe.Identity(u.geometric_dimension()) + fe.grad(u)
+            F = fe.variable(F)
+            J = fe.det(F)
+            energy = 1e2*(J - 1)**4
+            first_pk_stress = fe.diff(energy, F)
+            return first_pk_stress
 
         exp = self.compute_disp(delta)
-
         eta = 1e5
-        a = fe.inner(sigma(u, mu=mu), fe.grad(v)) * fe.dx - fe.dot(fe.dot(sigma(u, mu=mu), self.n), v) * self.ds(5) - \
-            fe.dot(fe.dot(sigma(v, mu=mu), self.n), u) * self.ds(5) + eta * fe.dot(u, v) * self.ds(5)
-        L = -fe.dot(fe.dot(sigma(v, mu=mu), self.n), exp) * self.ds(5) + eta * fe.dot(exp, v) * self.ds(5)
+        a = fe.inner(stress(s), fe.grad(v)) * fe.dx - fe.dot(fe.dot(stress(s), self.n), v) * self.ds(5) - \
+            fe.dot(fe.dot(stress(v), self.n), s) * self.ds(5) + eta * fe.dot(s, v) * self.ds(5) + \
+            fe.dot(fe.dot(stress(v), self.n), exp) * self.ds(5) - eta * fe.dot(exp, v) * self.ds(5) + \
+            fe.inner(penalty(s), fe.grad(v)) * fe.dx
+    
+
         bcs = [da.DirichletBC(S, da.Constant((0., 0.)), self.exterior)]   
-        da.solve(a == L, s, bcs=bcs)
+        da.solve(a == 0, s, bcs=bcs)
 
         return s
-
-
 
 
     # def move_mesh(self, h_values=None):
@@ -179,6 +186,10 @@ class PDECO(object):
 
 
     def adjoint_optimization(self):
+        print(f"\n###################################################################")
+        print(f"Optimizing {self.case_name} - {self.mode}")
+        print(f"###################################################################")
+
         self.object_values = []
 
         vtkfile_mesh = fe.File(f'data/pvd/{self.case_name}/{self.mode}/{self.problem}/u.pvd')
@@ -202,7 +213,6 @@ class PDECO(object):
             np.save(f'data/numpy/{self.case_name}/{self.mode}/h_{objective.count:03}.npy', x)
             objective.count += 1
             self.object_values.append(obj_val)
-
             return obj_val
 
         objective.count = 0
@@ -218,6 +228,10 @@ class PDECO(object):
             control = da.Control(self.delta)
             dJdm = da.compute_gradient(self.J, control)
             da.set_working_tape(da.Tape())
+
+            print(f"dJdm = {dJdm.values()}")
+            # exit()
+
             return dJdm.values()
 
 
@@ -225,9 +239,10 @@ class PDECO(object):
         # num_x = 912
         # x_initial = np.zeros(num_x)
         # x_initial = 0.
+        # bounds = bound * np.vstack([-np.ones(num_x), np.ones(num_x)]).T
 
         num_x = 2
-        x_initial = np.array([-0., 0.])
+        x_initial = np.array([-0., -0.])
 
         if self.mode == 'normal':
             bound = 1.
@@ -247,11 +262,11 @@ class PDECO(object):
         else:
             raise ValueError(f'Unknown mode: {self.mode}')
 
-
-        bound = 0.2
+ 
         method = 'L-BFGS-B'
+        bounds = np.array([[-0.2, 0.], [-0.1, 0.1]])
 
-        bounds = bound * np.vstack([-np.ones(num_x), np.ones(num_x)]).T
+
         options = {'maxiter': 100, 'disp': True}  # CG or L-BFGS-B or Newton-CG
         res = opt.minimize(fun=objective,
                            x0=x_initial,

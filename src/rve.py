@@ -156,30 +156,31 @@ class RVE(PDECO):
         reg = 0
 
         if self.mode == 'normal':
-            H = fe.as_matrix([[-0.1, 0.], [0., -0.125]])
+            H = fe.as_matrix([[-0.04, 0.], [0., -0.1]])
             self.RVE_solve(H)
             PK_11 = da.assemble(self.PK_stress[0, 0]*fe.dx)
             self.J = PK_11**2 + reg
         elif self.mode == 'shear':
-            H = fe.as_matrix([[0., 0.35], [0., -0.125]])
+            H = fe.as_matrix([[0., 0.3], [0., -0.125]])
+            # H = fe.as_matrix([[0., 0.], [0., -0.125]])
             self.RVE_solve(H)
             PK_12 = da.assemble(self.PK_stress[0, 1]*fe.dx)
-            self.J = 1e1*PK_12**2 + reg
+            self.J = PK_12**2 + reg
         elif self.mode == 'min_energy':
-            H = fe.as_matrix([[0., 0.], [0., -0.125]])
+            H = fe.as_matrix([[0., 0.], [0., -0.1]])
             self.RVE_solve(H)
             energy = da.assemble(self.E)
             self.J = energy + reg
             print(f"energy = {energy}")
         elif self.mode == 'max_energy':
-            H = fe.as_matrix([[0., 0.], [0., -0.01]])
+            H = fe.as_matrix([[0., 0.], [0., -0.1]])
             self.RVE_solve(H)
             force = da.assemble(self.PK_stress[1, 1]*fe.dx)
             energy = -1e2*da.assemble(self.E)
             self.J = energy + reg
             print(f"energy = {energy}")
         elif self.mode == 'von-mises':
-            self.RVE_solve(fe.as_matrix([[0., 0.], [0., -0.125]]))
+            self.RVE_solve(fe.as_matrix([[0., 0.], [0., -0.1]]))
             force = da.assemble(self.PK_stress[1, 1]*fe.dx)
             von_mises = 1e-6*da.assemble(self.sigma_v**4 * fe.dx)
             self.J = von_mises + 1e-1 * (force + 2.995)**2 + reg
@@ -218,14 +219,14 @@ class RVE(PDECO):
         energy = []
         force = []
         if self.mode == 'normal':
-            boundary_disp = np.linspace(0, -0.2, 11)
+            boundary_disp = np.linspace(0, -0.08, 11)
             for H11 in boundary_disp:
-                H = fe.as_matrix([[H11, 0.], [0., -0.125]])
+                H = fe.as_matrix([[H11, 0.], [0., -0.1]])
                 self.RVE_solve(H)
                 vtkfile_mesh << self.disp
                 e = da.assemble(self.E)
                 energy.append(e)
-                print(f" H11 = {H11}")
+                print(f"H11 = {H11}")
                 print(f"e = {e}")
         elif self.mode == 'shear':
             boundary_disp = np.linspace(0, 0.6, 11)
@@ -235,6 +236,7 @@ class RVE(PDECO):
                 vtkfile_mesh << self.disp
                 e = da.assemble(self.E)
                 energy.append(e)
+                print(f"H12 = {H12}")
                 print(f"e = {e}")
         elif self.mode == 'min_energy' or self.mode == 'max_energy':
             boundary_disp = np.linspace(0, -0.125, 11)
@@ -280,8 +282,8 @@ def main():
     # pde = RVE(problem='inverse', mode='normal')
     # pde.run()
 
-    case_names = ['normal', 'shear', 'min_energy', 'max_energy', 'von-mises']
-    # modes = ['normal']
+    # modes = ['normal', 'shear', 'max_energy', 'min_energy', 'von-mises']
+    modes = ['normal']
     for mode in modes:
         pde = RVE(problem='forward', mode=mode)    
         pde.run()
