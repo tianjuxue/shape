@@ -21,7 +21,7 @@ class Compliance(PDECO):
         L0 = 1.
         n_width = 8
         n_height = 2
-        mesh_file = 'data/xdmf/beam_mesh/RVE.xdmf'
+        mesh_file = f'data/xdmf/{self.case_name}/mesh/mesh.xdmf'
         if create_mesh:
             # radius = L0 / 4.
             radius = 0.25 * L0
@@ -88,7 +88,6 @@ class Compliance(PDECO):
         self.bottom.mark(boundaries, 3)
         self.top.mark(boundaries, 4)
         self.ds = fe.Measure('ds')(subdomain_data=boundaries)
-        self.normal = fe.FacetNormal(self.mesh)
         self.Vol0 = da.assemble(da.Constant(1.) * fe.dx(domain=self.mesh))
 
 

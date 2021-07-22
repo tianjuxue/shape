@@ -82,7 +82,7 @@ def create_RVE_mesh(interactive=False):
     if interactive:
         gmsh.fltk.run()
     gmsh.finalize()
-    xdmf_file = 'data/xdmf/RVE_mesh/RVE.xdmf'
+    xdmf_file = 'data/xdmf/rve/mesh/mesh.xdmf'
     msh_to_xdmf_2d(msh_file, xdmf_file)
 
 
