@@ -19,8 +19,7 @@ def RightCauchyGreen(F):
 def NeoHookeanEnergyFluctuation(variable, young_modulus, poisson_ratio, return_stress, fluctuation, H_list=None):
     shear_mod = young_modulus / (2 * (1 + poisson_ratio))
     bulk_mod = young_modulus / (3 * (1 - 2*poisson_ratio))
-    d = variable.geometric_dimension()
-
+ 
     if fluctuation:
         F = DeformationGradientFluctuation(variable, H_list)
     else:
@@ -36,8 +35,9 @@ def NeoHookeanEnergyFluctuation(variable, young_modulus, poisson_ratio, return_s
  
     if return_stress:
         first_pk_stress = fe.diff(energy, F)
+        constitutive_tensor = fe.diff(first_pk_stress, F)
         sigma_v = von_mises(first_pk_stress, F)
-        return energy, first_pk_stress, sigma_v
+        return energy, first_pk_stress, constitutive_tensor, sigma_v
 
     return energy
 
@@ -49,10 +49,10 @@ def von_mises(first_pk_stress, F):
 	return fe.sqrt(3*J2)
 
 
+def epsilon(u):
+    return fe.sym(fe.grad(u))
 
-# def strain(grad_u):
-#     return 0.5*(grad_u + grad_u.T)
-
-
-# def psi_linear_elasticity(epsilon, lamda, mu):
-#     return lamda / 2 * fe.tr(epsilon)**2 + mu * fe.inner(epsilon, epsilon)
+ 
+def sigma(L, u):
+    strain = epsilon(u) 
+    return fe.as_tensor(L[i, j, k, l] * strain[k, l], [i, j])

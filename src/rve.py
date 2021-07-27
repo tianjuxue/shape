@@ -12,16 +12,16 @@ from .constituitive import *
 
 
 class RVE(PDECO):
-    def __init__(self, problem, mode):
-        self.case_name = "rve"
-        self.young_modulus = 100
+    def __init__(self, case_name, mode, problem):
+        self.young_modulus = 1
         self.poisson_ratio = 0.3
+        self.case_name = case_name
         self.mode = mode
         super(RVE, self).__init__(problem)
 
 
     def build_mesh(self): 
-        mesh_file = f'data/xdmf/{self.case_name}/mesh/mesh.xdmf'
+        mesh_file = f'data/xdmf/rve/mesh/mesh.xdmf'
         self.mesh = fe.Mesh()
 
 
@@ -112,18 +112,17 @@ class RVE(PDECO):
 
 
     def RVE_solve(self, H):
-
-        V = fe.VectorFunctionSpace(self.mesh, 'P', 1, constrained_domain=self.exterior_periodic)
-        V_non_periodic = fe.VectorFunctionSpace(self.mesh, 'P', 1)
+        self.V = fe.VectorFunctionSpace(self.mesh, 'CG', 1, constrained_domain=self.exterior_periodic)
+        V_non_periodic = fe.VectorFunctionSpace(self.mesh, 'CG', 1)
         self.S = fe.FunctionSpace(self.mesh, 'DG', 0)
 
-        self.u = da.Function(V, name="v")
-        du = fe.TrialFunction(V)
-        v = fe.TestFunction(V)
+        self.u = da.Function(self.V, name="v")
+        du = fe.TrialFunction(self.V)
+        v = fe.TestFunction(self.V)
 
-        energy_density, self.PK_stress, self.sigma_v = NeoHookeanEnergyFluctuation(self.u, self.young_modulus, self.poisson_ratio, True, True, H)
+        energy_density, self.PK_stress, self.L, self.sigma_v = NeoHookeanEnergyFluctuation(self.u, self.young_modulus, self.poisson_ratio, True, True, H)
         self.E = energy_density * fe.dx
-        bcs = [da.DirichletBC(V, da.Constant((0., 0.)), self.corner, method='pointwise')]
+        bcs = [da.DirichletBC(self.V, da.Constant((0., 0.)), self.corner, method='pointwise')]
         dE = fe.derivative(self.E, self.u, v)
         jacE = fe.derivative(dE, self.u, du)
 
@@ -137,15 +136,6 @@ class RVE(PDECO):
         # if self.problem == 'forward':
         #     xdmf_file_sols = fe.XDMFFile(f'data/xdmf/{self.case_name}/{self.problem}/sols.xdmf')    
         #     xdmf_file_sols.write(self.u)
-
-        # if self.problem == 'debug':
-        #     e = da.assemble(self.E)
-        #     f = da.assemble(self.PK_stress[1, 1]*self.ds(4))
-        #     print(f"Energy = {e}")
-        #     print(f"force = {f}")
-        #     self.energy.append(e)
-        #     self.force.append(f)
-            # self.xdmf_file_sols.write(self.disp, self.step)
 
 
     def compute_objective(self):
@@ -195,19 +185,6 @@ class RVE(PDECO):
 
         return float(self.J)
 
-
-    # def force_disp(self, h=None):
-    #     self.energy = []
-    #     self.force = []
-    #     self.build_mesh()
-    #     self.move_mesh(h)
-    #     boundary_disp = np.linspace(0, -0.1, 11)
-    #     for H22 in boundary_disp:
-    #         H = fe.as_matrix([[0., 0.], [0., H22]])
-    #         self.RVE_solve(H)
-    #         # self.step += 1
-
-    #     return self.energy, self.force
 
     def forward_runs(self):
         h_files = glob.glob(f'data/numpy/{self.case_name}/{self.mode}/h_*')
@@ -260,7 +237,6 @@ class RVE(PDECO):
         print(f'force = {force}')
 
 
-
     def plot_forward_runs(self):
         force = np.load(f'data/numpy/{self.case_name}/{self.mode}/force.npy')
         energy = np.load(f'data/numpy/{self.case_name}/{self.mode}/energy.npy')
@@ -278,14 +254,29 @@ class RVE(PDECO):
         pass
 
 
+    def debug(self):
+        self.build_mesh()
+        vtkfile_F = fe.File(f'data/pvd/{self.case_name}/{self.mode}/{self.problem}/F.pvd')
+        D = fe.TensorFunctionSpace(self.mesh, 'DG', 0)
+        delta = da.Constant([0.1, 0.1])
+        s = self.mesh_deformation(delta)
+        F = fe.Identity(2) + fe.grad(s)
+        proj_1 = da.project(F, D)
+        fe.ALE.move(self.mesh, s)
+        F_inv = fe.Identity(2) - fe.grad(s)
+        proj_2 = da.project(F_inv * proj_1, D)
+        proj_2.rename("F", "F")
+        vtkfile_F << proj_2
+
+
 def main():
-    # pde = RVE(problem='inverse', mode='normal')
+    # pde = RVE(case_name='rve', problem='inverse', mode='normal')
     # pde.run()
 
     # modes = ['normal', 'shear', 'max_energy', 'min_energy', 'von-mises']
     modes = ['normal']
     for mode in modes:
-        pde = RVE(problem='forward', mode=mode)    
+        pde = RVE(case_name='rve', mode=mode, problem='debug')    
         pde.run()
 
 

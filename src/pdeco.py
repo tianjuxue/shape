@@ -88,7 +88,7 @@ class PDECO(object):
 
 
     def mesh_deformation(self, delta):
-        V = fe.FunctionSpace(self.mesh, 'P', 1)
+        V = fe.FunctionSpace(self.mesh, 'CG', 1)
         u, v = fe.TrialFunction(V), fe.TestFunction(V)
         a = -fe.inner(fe.grad(u), fe.grad(v)) * fe.dx
         l = da.Constant(0.) * v * fe.dx
@@ -98,7 +98,7 @@ class PDECO(object):
         mu = da.Function(V, name="mesh deformation mu")
         da.solve(a == l, mu, bcs=bcs)
 
-        S = fe.VectorFunctionSpace(self.mesh, 'P', 1)
+        S = fe.VectorFunctionSpace(self.mesh, 'CG', 1)
         u, v = fe.TrialFunction(S), fe.TestFunction(S)
         s = da.Function(S, name="mesh deformation")
 
@@ -125,64 +125,10 @@ class PDECO(object):
             fe.dot(fe.dot(stress(v), self.n), exp) * self.ds(5) - eta * fe.dot(exp, v) * self.ds(5) + \
             fe.inner(penalty(s), fe.grad(v)) * fe.dx
     
-
         bcs = [da.DirichletBC(S, da.Constant((0., 0.)), self.exterior)]   
         da.solve(a == 0, s, bcs=bcs)
 
         return s
-
-
-    # def move_mesh(self, h_values=None):
-    #     b_mesh = da.BoundaryMesh(self.mesh, "exterior")
-    #     self.S_b = fe.VectorFunctionSpace(b_mesh, 'P', 1)
-    #     self.h = da.Function(self.S_b, name="h")
-
-    #     # self.h_size = len(self.h.vector()[:])
-
-    #     if h_values is not None:
-    #         if hasattr(h_values, "__len__"):
-    #             if len(h_values) == 1:
-    #                 h_values = h_values[0]
-
-    #         self.h.vector()[:] = h_values
-
-    #     # self.h.vector()[:] = 0.5
-
-    #     s = self.mesh_deformation(self.h)
-    #     fe.ALE.move(self.mesh, s)
-
-
-    # def mesh_deformation(self, h):
-    #     h_V = da.transfer_from_boundary(h, self.mesh)
-    #     h_V.rename("Volume extension of h", "")
-
-    #     V = fe.FunctionSpace(self.mesh, 'P', 1)
-    #     u, v = fe.TrialFunction(V), fe.TestFunction(V)
-    #     a = -fe.inner(fe.grad(u), fe.grad(v)) * fe.dx
-    #     l = da.Constant(0.) * v * fe.dx
-    #     mu_min = da.Constant(1., name="mu_min")
-    #     mu_max = da.Constant(2., name="mu_max")
-    #     bcs = [da.DirichletBC(V, mu_min, self.exterior), da.DirichletBC(V, mu_max, self.interior)] 
-    #     mu = da.Function(V, name="mesh deformation mu")
-    #     da.solve(a == l, mu, bcs=bcs)
-
-    #     S = fe.VectorFunctionSpace(self.mesh, 'P', 1)
-
-    #     u, v = fe.TrialFunction(S), fe.TestFunction(S)
-
-    #     def epsilon(u):
-    #         return fe.sym(fe.grad(u))
-
-    #     def sigma(u, mu=1., lmb=0.):
-    #         return 2 * mu * epsilon(u) + lmb * fe.tr(epsilon(u)) * fe.Identity(2)
-
-    #     a = fe.inner(sigma(u, mu=mu), fe.grad(v)) * fe.dx
-    #     L = fe.inner(h_V, v) * self.ds(5)
-    #     bcs = [da.DirichletBC(S, da.Constant((0., 0.)), self.exterior)]   
-    #     s = da.Function(S, name="mesh deformation")
-    #     da.solve(a == L, s, bcs=bcs)
-
-    #     return s
 
 
     def adjoint_optimization(self):

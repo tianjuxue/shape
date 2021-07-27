@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 
 np.set_printoptions(threshold=sys.maxsize, linewidth=1000, suppress=True)
-np.set_printoptions(precision=3)
+np.set_printoptions(precision=10)
 np.random.seed(0)
 
 parser = argparse.ArgumentParser()
@@ -26,8 +26,8 @@ else:
     fe.set_log_level(30)
 
 
-plt.rcParams.update({
-    "text.latex.preamble": r"\usepackage{amsmath}",
-    "text.usetex": True,
-    "font.family": "sans-serif",
-    "font.sans-serif": ["Helvetica"]})
+# plt.rcParams.update({
+#     "text.latex.preamble": r"\usepackage{amsmath}",
+#     "text.usetex": True,
+#     "font.family": "sans-serif",
+#     "font.sans-serif": ["Helvetica"]})

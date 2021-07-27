@@ -8,7 +8,6 @@ Created on Wed Oct  4 14:04:10 2017
 
 from __future__ import print_function
 from dolfin import *
-import ufl
 import numpy as np
 #from scipy.linalg import eigvalsh
 import matplotlib.pyplot as plt
@@ -25,10 +24,7 @@ if not has_slepc():
 
 ####Material properties
 ############################################################
-# E = 2.0e6; nu = 0.45; rho = 1.0
-
-E = 1e2; nu = 0.3; rho = 1.0
-
+E = 2.0e6; nu = 0.45; rho = 1.0
 mu = E/(2+2*nu)
 lmbda = E*nu/((1+nu)*(1-2*nu))
 kV = Constant((0.0,0.0))
@@ -76,26 +72,23 @@ V = FunctionSpace(mesh, P*P, constrained_domain=PeriodicBoundary())
 def eigen_solver(V,kV):   
     ####Mechanics part
     ############################################################   
-    i,j,k,l=ufl.indices(4)
+    i,j,k,l=indices(4)
     delta=Identity(2)
 
-    C = as_tensor((lmbda*(delta[i,j]*delta[k,l]) + mu*(delta[i,k]*delta[j,l]+ delta[i,l]*delta[j,k])), (i,j,k,l))
+    C = as_tensor((lmbda*(delta[i,j]*delta[k,l])+ 
+                      mu*(delta[i,k]*delta[j,l]+ 
+                      delta[i,l]*delta[j,k])), (i,j,k,l))
     
-
+    # Define strain and stress
     def epsilon(u):
-        return sym(grad(u))
-
-    # def sigma(u):
-    #     strain = epsilon(u) 
-    #     return 2 * mu * strain + lmbda * tr(strain) * Identity(2)
-
+        return 0.5*(nabla_grad(u) + nabla_grad(u).T)
+    #return sym(nabla_grad(u))
     def sigma(u):
-        strain = epsilon(u) 
-        return as_tensor(C[i, j, k, l]*strain[k, l], [i, j])
-
+        return lmbda*nabla_div(u)*Identity(2) + 2*mu*epsilon(u)
+    # k-sigma
     def ukk(u, kV):
-        return as_tensor(C[i, j, k, l]*kV[l]*kV[j]*u[k], [i])
-
+        return (lmbda+mu)*kV*dot(kV, u) + mu*dot(kV, kV)*u
+    
     def uk1(u, kV):
         return as_tensor((C[i,j,k,l]*u[k]*kV[l]),[i, j])
     
@@ -105,25 +98,12 @@ def eigen_solver(V,kV):
     # Define variational problem
     uR, uI = TrialFunctions(V)
     vR, vI = TestFunctions(V)
-
-
-
-    # aR = inner(sigma(uR), epsilon(vR))*dx + inner(ukk(uR, kV), vR)*dx - \
-    #      inner(uk1(uI, kV), grad(vR))*dx + inner(uk2(uI, kV), vR)*dx
+    aR = inner(sigma(uR), epsilon(vR))*dx + inner(ukk(uR, kV), vR)*dx - \
+         inner(uk1(uI, kV), grad(vR))*dx + inner(uk2(uI, kV), vR)*dx
           
-    # aI = inner(sigma(uI), epsilon(vI))*dx + inner(ukk(uI, kV), vI)*dx + \
-    #      inner(uk1(uR, kV), grad(vI))*dx - inner(uk2(uR, kV), vI)*dx
-
-    # a = aR + aI 
-
-    a = C[i, j, k, l] * (grad(uR)[k, l] * grad(vR)[i, j] + grad(uI)[k, l] * grad(vI)[i, j] + \
-                         kV[l] * kV[j] * (uR[k] * vR[i] + uI[k] * vI[i]) + \
-                         (uR[k] * grad(vI)[i, j] - uI[k] * grad(vR)[i, j]) * kV[l] - \
-                         (vI[i] * grad(uR)[k, l] - vR[i] * grad(uI)[k, l]) * kV[j]) * dx
-
-
-
-
+    aI = inner(sigma(uI), epsilon(vI))*dx + inner(ukk(uI, kV), vI)*dx + \
+         inner(uk1(uR, kV), grad(vI))*dx - inner(uk2(uR, kV), vI)*dx
+    a = aR + aI 
     m = rho*(inner(uR,vR)*dx + inner(uI,vI)*dx)
     
     # Assemble stiffness form
@@ -173,16 +153,7 @@ for kt in kts:
     bandgaps.append(freqt)
 
 bArray = np.array(bandgaps)
-plt.plot(bArray/1000., marker='o')
-
-
-vtkfile = File(f'mesh.pvd')
-vtkfile << mesh
-
-print(bArray) # 31x16
-print(bArray.shape)
-plt.show()
-
+plt.plot(bArray/1000.)
 #o = np.sqrt(o2)
 ## Compute all eigenvalues of A x = \lambda x
 #print("Computing eigenvalues. This can take a minute.")
