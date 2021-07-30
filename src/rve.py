@@ -126,12 +126,48 @@ class RVE(PDECO):
         dE = fe.derivative(self.E, self.u, v)
         jacE = fe.derivative(dE, self.u, du)
 
-        nIters, convergence = DynamicRelaxSolve(dE, self.u, bcs, jacE)
+        # nIters, convergence = DynamicRelaxSolve(dE, self.u, bcs, jacE)
         da.solve(dE == 0, self.u, bcs, J=jacE)
 
         X = fe.SpatialCoordinate(self.mesh)
         self.disp = da.project(self.u + fe.dot(H, X), V_non_periodic)
         self.disp.rename("u", "u")
+
+        dummy_l = fe.dot(da.Constant((0., 0.)), v) * fe.dx(domain=self.mesh)
+
+        A = fe.PETScMatrix()
+        b = fe.PETScVector()
+        # fe.assemble(jacE, tensor=A)   
+        fe.assemble_system(jacE, dummy_l, bcs, A_tensor=A, b_tensor=b)
+
+        solver = fe.SLEPcEigenSolver(A)
+        solver.parameters["solver"] = "krylov-schur"
+        solver.parameters["spectrum"] = "target magnitude"
+        solver.parameters["spectral_transform"] = "shift-and-invert"
+        solver.parameters["spectral_shift"] = -1.
+
+        solver.solve(32)
+        
+        eigen_vals = []
+        eigen_vecs = []
+        for i in range(8):
+            r, c, rx, cx = solver.get_eigenpair(i)
+            eigen_vals.append(r)
+            eigen_vecs.append(rx)
+
+        print(eigen_vals)
+        plt.plot(eigen_vals, marker='o', color='black')
+        plt.show()
+        # print(eigen_vecs[2].get_local())
+
+        vtkfile_mesh_tmp = fe.File(f'data/pvd/{self.case_name}/{self.mode}/{self.problem}/eigen.pvd')
+
+        eigen_u = fe.Function(self.V)
+        eigen_u.vector()[:] = eigen_vecs[0]
+        eigen_u.rename("e", "e")
+        vtkfile_mesh_tmp << eigen_u
+
+        exit()
 
         # if self.problem == 'forward':
         #     xdmf_file_sols = fe.XDMFFile(f'data/xdmf/{self.case_name}/{self.problem}/sols.xdmf')    

@@ -132,6 +132,15 @@ def eigen_solver(V,kV):
     assemble(a, tensor=A)
     assemble(m, tensor=M)
 
+
+    bcs = [DirichletBC(V.sub(0), Constant((0., 0.)), fixed_boundary, method='pointwise'),
+           DirichletBC(V.sub(1), Constant((0., 0.)), fixed_boundary, method='pointwise')]
+
+    # for bc in bcs:
+    #     bc.apply(A)
+    #     bc.apply(M)
+
+
     # Create eigensolver
     solver = SLEPcEigenSolver(A, M)
     solver.parameters["solver"] = "krylov-schur"

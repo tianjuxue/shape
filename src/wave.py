@@ -3,6 +3,7 @@ import dolfin_adjoint as da
 import mshr
 import glob
 import ufl
+import scipy
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -23,15 +24,15 @@ class Wave(RVE):
 
 
     def compute_objective(self):
-        compress = -0.1
+        compress = -0.04
         H = fe.as_matrix([[compress, 0.], [0., compress]])
         self.RVE_solve(H)
 
-        self.raw_num_eigs = 8
-        self.actual_num_eigs = self.raw_num_eigs
+        self.raw_num_eigs = 32
+        self.actual_num_eigs = self.raw_num_eigs // 2
         self.cut_len = self.actual_num_eigs // 2
 
-        all_eigen_vals, all_eigen_vecs, all_dlambdas = self.kV_path('full')
+        all_eigen_vals, all_eigen_vecs, all_dlambdas = self.kV_path('irreducible')
         band_gap_grads = self.ks(all_eigen_vals)
 
         self.J = 0
@@ -43,8 +44,14 @@ class Wave(RVE):
         print(f'True band_val = {self.obj_val}')
 
         print(all_eigen_vals.T)
-        omega = np.sqrt(np.absolute(all_eigen_vals))
-        plt.plot(all_eigen_vals, marker='o', color='black')
+        omegas = np.sqrt(np.absolute(all_eigen_vals))
+        # plt.plot(all_eigen_vals, marker='o', color='black')
+        # for eigen_vals in all_eigen_vals.T:
+        #     plt.scatter(np.arange(len(eigen_vals)), eigen_vals, s=20.)
+        for omega in omegas.T:
+            plt.scatter(np.arange(len(omega)), omega, s=20., color='black')
+
+
         plt.show()
         exit()
 
@@ -59,10 +66,22 @@ class Wave(RVE):
         ks = []
         A = 2 * self.L0 
         if path == 'irreducible':
-            pass
+            num_k = 31
+            kts = np.linspace(0, 3, num_k)
+            for kt in kts:
+                if kt < 1:
+                    kx = (np.pi / A) * kt
+                    ky = 0.
+                elif kt < 2:
+                    kx = np.pi / A
+                    ky = np.pi / A * (kt - 1)
+                else:
+                    kx = np.pi / A * (3 - kt)
+                    ky = kx
+                ks.append((kx, ky))
         elif path == 'full':
-            self.num_k = 41
-            kts = np.linspace(0, 4, self.num_k)
+            num_k = 41
+            kts = np.linspace(0, 4, num_k)
             for kt in kts:
                 if kt < 1:
                     kx = (2 * np.pi / A) * kt
@@ -78,8 +97,8 @@ class Wave(RVE):
                     ky = (2 * np.pi / A) * (4 - kt)
                 ks.append((kx, ky))
         elif path == 'partial':
-            self.num_k = 11
-            kts = np.linspace(1, 2, self.num_k)
+            num_k = 11
+            kts = np.linspace(1, 2, num_k)
             for kt in kts:
                 kx = 2 * np.pi / A
                 ky = (2 * np.pi / A) * (kt - 1)
@@ -162,6 +181,10 @@ class Wave(RVE):
   
         a = self.assemble_A(uR, uI, vR, vI, kV)
         m = self.assemble_M(uR, uI, vR, vI)
+
+        bcs = [da.DirichletBC(self.PP.sub(0), da.Constant((0., 0.)), self.corner, method='pointwise'),
+               da.DirichletBC(self.PP.sub(1), da.Constant((0., 0.)), self.corner, method='pointwise')]
+
         
         # Assemble stiffness form
         A = fe.PETScMatrix()
@@ -169,13 +192,23 @@ class Wave(RVE):
         fe.assemble(a, tensor=A)
         fe.assemble(m, tensor=M)
 
+        # eigvals, eigvecs = scipy.sparse.linalg.eigs(A.array(), 10, M.array(), which='SM')
+        # eigvals = eigvals.real
+        # print(eigvals)
+        # exit()
+
+        # for bc in bcs:
+        #     bc.apply(A)
+        #     bc.apply(M)
+
         # Create eigensolver
         solver = fe.SLEPcEigenSolver(A, M)
         solver.parameters["solver"] = "krylov-schur"
         solver.parameters["problem_type"] = "gen_hermitian"
         solver.parameters["spectrum"] = "target magnitude"
         solver.parameters["spectral_transform"] = "shift-and-invert"
-        solver.parameters["spectral_shift"] = 0.1
+        solver.parameters["spectral_shift"] = -1e-3
+        # solver.parameters["tolerence"] = 0.1
 
         solver.solve(self.raw_num_eigs)
         
@@ -189,13 +222,14 @@ class Wave(RVE):
         eigen_vals = np.array(eigen_vals)
         eigen_vecs = np.array(eigen_vecs)
 
-        inds = eigen_vals.argsort()
-        eigen_vals = eigen_vals[inds]
-        eigen_vecs = eigen_vecs[inds]
+        # inds = eigen_vals.argsort()
+        # eigen_vals = eigen_vals[inds]
+        # eigen_vecs = eigen_vecs[inds]
  
         if self.actual_num_eigs < self.raw_num_eigs:
             odd_even_diff = np.sum(np.absolute(eigen_vals[0::2] - eigen_vals[1::2]))
             assert  odd_even_diff < 1e-3, f'odd eigenvalues differ too much from even ones, distance: {odd_even_diff}'
+            print(f"Passing even-odd test")
             eigen_vals = eigen_vals[0::2]
             eigen_vecs = eigen_vecs[0::2]
 
@@ -241,8 +275,8 @@ class Wave(RVE):
             # exit()
             return dJdm.values()
 
-        x_initial = np.array([-0.3, 0.1])
-        # x_initial = np.array([0. , 0. ])
+        # x_initial = np.array([0.1, 0.1])
+        x_initial = np.array([0. , 0. ])
 
         method = 'L-BFGS-B'
         bounds = np.array([[-0.3, 0.], [-0.1, 0.1]])

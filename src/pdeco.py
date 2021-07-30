@@ -10,26 +10,6 @@ import glob
 from . import arguments
 
 
-# class PoreExpression(da.UserExpression):
-#     def __init__(self, L0, delta):
-#         super(PoreExpression, self).__init__()
-#         self.L0 = L0
-#         self.delta = delta
-
-#     def eval(self, values, x):
-#         L0 = self.L0
-#         x0 = x[0] - x[0] // L0 * L0 - L0/2
-#         x1 = x[1] - x[1] // L0 * L0 - L0/2
-#         values[0] = float(self.delta)*x0
-#         values[1] = float(self.delta)*x1
-
-#     def value_shape(self):
-#         return (2,)
-
-# exp = PoreExpression(self.L0, delta)
-
-
-
 class PDECO(object):
     def __init__(self, problem):  
         self.problem = problem 
@@ -43,8 +23,8 @@ class PDECO(object):
             self.forward_runs()
         elif self.problem == 'post-processing':
             self.visualize_results()
-            plt.ioff()
-            plt.show()
+            # plt.ioff()
+            # plt.show()
         elif self.problem == 'debug':
             self.debug()
         else:
@@ -68,7 +48,7 @@ class PDECO(object):
         x1 -= self.L0/2
         x2 -= self.L0/2
 
-        r_raw =  fe.sqrt(x1**2 + x2**2)
+        r_raw = fe.sqrt(x1**2 + x2**2)
 
         phi_0 = 0.5
         theta = ufl.atan_2(x2, x1)
@@ -227,13 +207,5 @@ class PDECO(object):
             np.save(f'data/numpy/{self.case_name}/{self.mode}/vm_stress.npy', np.array(objective_aux))
 
 
-    def plot_optimization_progress(self):
-        object_values = np.load(f'data/numpy/{self.case_name}/{self.mode}/obj_vals.npy')
-        fig = plt.figure()
-        plt.plot(object_values, linestyle='--', marker='o')
-        plt.tick_params(labelsize=14)
-        plt.xlabel("$N$ (Gradient descent steps)", fontsize=14)
-        plt.ylabel("$J$ (Objective)", fontsize=14)
-        fig.savefig(f'data/pdf/{self.case_name}/{self.mode}_{self.case_name}_obj.pdf', bbox_inches='tight')
-        plt.show()
+
 

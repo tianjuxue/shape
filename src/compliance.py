@@ -1,6 +1,9 @@
 import fenics as fe
 import dolfin_adjoint as da
 import mshr
+import scipy.optimize as opt
+import numpy as np
+import matplotlib.pyplot as plt
 from pyadjoint.overloaded_type import create_overloaded_object
 from . import arguments
 from .dr_homo import DynamicRelaxSolve
@@ -9,12 +12,61 @@ from .constituitive import *
 
 
 class Compliance(PDECO):
-    def __init__(self, problem, mode):
-        self.case_name = "compliance"
+    def __init__(self, case_name, mode, problem):
+        self.case_name = case_name
+        self.mode = mode
         self.young_modulus = 100
         self.poisson_ratio = 0.3
-        self.mode = mode
         super(Compliance, self).__init__(problem)
+
+ 
+    def move_mesh(self, h_values=None):
+        b_mesh = da.BoundaryMesh(self.mesh, "exterior")
+        self.S_b = fe.VectorFunctionSpace(b_mesh, 'P', 1)
+        self.h = da.Function(self.S_b, name="h")
+
+        if h_values is not None:
+            if hasattr(h_values, "__len__"):
+                if len(h_values) == 1:
+                    h_values = h_values[0]
+
+            self.h.vector()[:] = h_values
+
+        s = self.mesh_deformation(self.h)
+        fe.ALE.move(self.mesh, s)
+
+
+    def mesh_deformation(self, h):
+        h_V = da.transfer_from_boundary(h, self.mesh)
+        h_V.rename("Volume extension of h", "")
+
+        V = fe.FunctionSpace(self.mesh, 'P', 1)
+        u, v = fe.TrialFunction(V), fe.TestFunction(V)
+        a = -fe.inner(fe.grad(u), fe.grad(v)) * fe.dx
+        l = da.Constant(0.) * v * fe.dx
+        mu_min = da.Constant(1., name="mu_min")
+        mu_max = da.Constant(2., name="mu_max")
+        bcs = [da.DirichletBC(V, mu_min, self.exterior), da.DirichletBC(V, mu_max, self.interior)] 
+        mu = da.Function(V, name="mesh deformation mu")
+        da.solve(a == l, mu, bcs=bcs)
+
+        S = fe.VectorFunctionSpace(self.mesh, 'P', 1)
+
+        u, v = fe.TrialFunction(S), fe.TestFunction(S)
+
+        def epsilon(u):
+            return fe.sym(fe.grad(u))
+
+        def sigma(u, mu=1., lmb=0.):
+            return 2 * mu * epsilon(u) + lmb * fe.tr(epsilon(u)) * fe.Identity(2)
+
+        a = fe.inner(sigma(u, mu=mu), fe.grad(v)) * fe.dx
+        L = fe.inner(h_V, v) * fe.ds
+        bcs = [da.DirichletBC(S, da.Constant((0., 0.)), self.exterior)]   
+        s = da.Function(S, name="mesh deformation")
+        da.solve(a == L, s, bcs=bcs)
+
+        return s
 
 
     def build_mesh(self, create_mesh=False): 
@@ -23,7 +75,6 @@ class Compliance(PDECO):
         n_height = 2
         mesh_file = f'data/xdmf/{self.case_name}/mesh/mesh.xdmf'
         if create_mesh:
-            # radius = L0 / 4.
             radius = 0.25 * L0
             resolution = 150
             material_domain = mshr.Rectangle(fe.Point(0, 0), fe.Point(n_width * L0, n_height * L0))
@@ -40,8 +91,7 @@ class Compliance(PDECO):
         else:
             self.mesh = fe.Mesh()
             with fe.XDMFFile(mesh_file) as file:
-                file.read( self.mesh)
-
+                file.read(self.mesh)
 
         # Add dolfin-adjoint dependency
         self.mesh = create_overloaded_object(self.mesh)
@@ -110,8 +160,8 @@ class Compliance(PDECO):
         self.disp = self.u
 
         if self.problem == 'forward':
-            xdmf_file_sols = fe.XDMFFile(f'data/xdmf/{self.case_name}/{self.problem}/sols.xdmf')    
-            xdmf_file_sols.write(self.u)
+            vtkfile_mesh = fe.File(f'data/pvd/{self.case_name}/{self.mode}/{self.problem}/u.pvd')
+            vtkfile_mesh << self.disp
 
         comp = da.assemble(fe.dot(traction, self.u) * self.ds(2))
 
@@ -125,8 +175,67 @@ class Compliance(PDECO):
         return float(self.J)
 
 
+    def forward_runs(self):
+        self.build_mesh(True)
+        self.forward_solve()
+
+
+    def adjoint_optimization(self):
+        print(f"\n###################################################################")
+        print(f"Optimizing {self.case_name} - {self.mode}")
+        print(f"###################################################################")
+
+        self.object_values = []
+
+        vtkfile_mesh = fe.File(f'data/pvd/{self.case_name}/{self.mode}/{self.problem}/u.pvd')
+
+        def objective(x):
+            print(f"h abs max = {np.max(np.absolute(x))}")
+            self.build_mesh()
+            self.move_mesh(x)
+            obj_val = self.forward_solve()
+            vtkfile_mesh << self.disp
+            objective.count += 1
+            self.object_values.append(obj_val)
+            return obj_val
+
+        objective.count = 0
+
+        def derivative(x):
+            control = da.Control(self.h)
+            dJdm = da.compute_gradient(self.J, control)
+            da.set_working_tape(da.Tape())
+            return dJdm.vector()[:]
+
+        x_initial = 0.
+        options = {'maxiter': 10, 'disp': True}   
+        res = opt.minimize(fun=objective,
+                           x0=x_initial,
+                           method='CG',
+                           jac=derivative,
+                           callback=None,
+                           options=options)
+
+        np.save(f'data/numpy/{self.case_name}/{self.mode}/obj_vals.npy', np.array(self.object_values))
+ 
+
+    def visualize_results(self):
+        object_values = np.load(f'data/numpy/{self.case_name}/{self.mode}/obj_vals.npy')
+        fig = plt.figure()
+        plt.plot(object_values, linestyle='--', marker='o')
+        plt.tick_params(labelsize=14)
+        plt.xlabel("$N$ (Optimization steps)", fontsize=14)
+        plt.ylabel("$J$ (Objective)", fontsize=14)
+        fig.savefig(f'data/pdf/{self.case_name}/{self.mode}_{self.case_name}_obj.pdf', bbox_inches='tight')
+        plt.show()
+
+
 def main():
-    pde = Compliance(problem='inverse', mode='beam')
+    pde = Compliance(case_name='compliance', mode='beam', problem='forward')
+    pde.run()    
+    pde = Compliance(case_name='compliance', mode='beam', problem='inverse')
+    pde.run()
+    pde = Compliance(case_name='compliance', mode='beam', problem='post-processing')
     pde.run()
 
 
