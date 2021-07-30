@@ -12,8 +12,9 @@ from .constituitive import *
 
 
 class Compliance(PDECO):
-    def __init__(self, case_name, mode, problem):
-        self.case_name = case_name
+    def __init__(self, domain, case, mode, problem):
+        self.domain = domain
+        self.case = case
         self.mode = mode
         self.young_modulus = 100
         self.poisson_ratio = 0.3
@@ -73,7 +74,7 @@ class Compliance(PDECO):
         L0 = 1.
         n_width = 8
         n_height = 2
-        mesh_file = f'data/xdmf/{self.case_name}/mesh/mesh.xdmf'
+        mesh_file = f'data/xdmf/{self.domain}/mesh/mesh.xdmf'
         if create_mesh:
             radius = 0.25 * L0
             resolution = 150
@@ -160,7 +161,7 @@ class Compliance(PDECO):
         self.disp = self.u
 
         if self.problem == 'forward':
-            vtkfile_mesh = fe.File(f'data/pvd/{self.case_name}/{self.mode}/{self.problem}/u.pvd')
+            vtkfile_mesh = fe.File(f'data/pvd/{self.domain}/{self.case}/{self.mode}/{self.problem}/u.pvd')
             vtkfile_mesh << self.disp
 
         comp = da.assemble(fe.dot(traction, self.u) * self.ds(2))
@@ -182,12 +183,12 @@ class Compliance(PDECO):
 
     def adjoint_optimization(self):
         print(f"\n###################################################################")
-        print(f"Optimizing {self.case_name} - {self.mode}")
+        print(f"Optimizing {self.case} - {self.mode}")
         print(f"###################################################################")
 
         self.object_values = []
 
-        vtkfile_mesh = fe.File(f'data/pvd/{self.case_name}/{self.mode}/{self.problem}/u.pvd')
+        vtkfile_mesh = fe.File(f'data/pvd/{self.domain}/{self.case}/{self.mode}/{self.problem}/u.pvd')
 
         def objective(x):
             print(f"h abs max = {np.max(np.absolute(x))}")
@@ -216,26 +217,26 @@ class Compliance(PDECO):
                            callback=None,
                            options=options)
 
-        np.save(f'data/numpy/{self.case_name}/{self.mode}/obj_vals.npy', np.array(self.object_values))
+        np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/obj_vals.npy', np.array(self.object_values))
  
 
     def visualize_results(self):
-        object_values = np.load(f'data/numpy/{self.case_name}/{self.mode}/obj_vals.npy')
+        object_values = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/obj_vals.npy')
         fig = plt.figure()
         plt.plot(object_values, linestyle='--', marker='o')
         plt.tick_params(labelsize=14)
         plt.xlabel("$N$ (Optimization steps)", fontsize=14)
         plt.ylabel("$J$ (Objective)", fontsize=14)
-        fig.savefig(f'data/pdf/{self.case_name}/{self.mode}_{self.case_name}_obj.pdf', bbox_inches='tight')
+        fig.savefig(f'data/pdf/{self.domain}/{self.case}_obj.pdf', bbox_inches='tight')
         plt.show()
 
 
 def main():
-    pde = Compliance(case_name='compliance', mode='beam', problem='forward')
+    pde = Compliance(domain='beam', case='compliance', mode='simple', problem='forward')
     pde.run()    
-    pde = Compliance(case_name='compliance', mode='beam', problem='inverse')
+    pde = Compliance(domain='beam', case='compliance', mode='simple', problem='inverse')
     pde.run()
-    pde = Compliance(case_name='compliance', mode='beam', problem='post-processing')
+    pde = Compliance(domain='beam', case='compliance', mode='simple', problem='post-processing')
     pde.run()
 
 

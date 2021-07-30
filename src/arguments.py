@@ -26,8 +26,8 @@ else:
     fe.set_log_level(30)
 
 
-plt.rcParams.update({
-    "text.latex.preamble": r"\usepackage{amsmath}",
-    "text.usetex": True,
-    "font.family": "sans-serif",
-    "font.sans-serif": ["Helvetica"]})
+# plt.rcParams.update({
+#     "text.latex.preamble": r"\usepackage{amsmath}",
+#     "text.usetex": True,
+#     "font.family": "sans-serif",
+#     "font.sans-serif": ["Helvetica"]})

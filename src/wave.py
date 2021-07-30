@@ -1,7 +1,5 @@
 import fenics as fe
 import dolfin_adjoint as da
-import mshr
-import glob
 import ufl
 import scipy
 import numpy as np
@@ -9,18 +7,15 @@ import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from matplotlib import cm
-from matplotlib.ticker import LinearLocator
-import scipy.optimize as opt
-from pyadjoint.overloaded_type import create_overloaded_object
+from matplotlib.ticker import LinearLocator 
 from . import arguments
-from .dr_homo import DynamicRelaxSolve
-from .rve import RVE
-from .constituitive import *
+from .pdeco import RVE
+# from .constituitive import *
 
 
 class Wave(RVE):
-    def __init__(self, case_name, mode, problem):
-        super(Wave, self).__init__(case_name, mode, problem)
+    def __init__(self, domain, case, mode, problem):
+        super(Wave, self).__init__(domain, case, mode, problem)
 
 
     def compute_objective(self):
@@ -236,63 +231,6 @@ class Wave(RVE):
         return eigen_vals, eigen_vecs
 
 
-    def adjoint_optimization(self):
-        print(f"\n###################################################################")
-        print(f"Optimizing {self.case_name} - {self.mode}")
-        print(f"###################################################################")
-
-        self.object_values = []
-
-        vtkfile_mesh = fe.File(f'data/pvd/{self.case_name}/{self.mode}/{self.problem}/u.pvd')
-
-        def objective(x):
-            print(f"x = {x}")
-
-            self.build_mesh()
-            self.move_mesh(x)
-            self.compute_objective()
-
-            obj_val = self.obj_val  
-            vtkfile_mesh << self.disp
-
-            # np.save(f'data/numpy/{self.case_name}/{self.mode}/h_{objective.count:03}.npy', x)
-            objective.count += 1
-            self.object_values.append(obj_val)
-
-            print(f"obj_val = {obj_val}")
-
-            return obj_val
-
-        objective.count = 0
-
-        def derivative(x):
-            control = da.Control(self.delta)
-            dJdm = da.compute_gradient(self.J, control)
-            da.set_working_tape(da.Tape())
-
-            print(f"dJdm = {dJdm.values()}")
-
-            # exit()
-            return dJdm.values()
-
-        # x_initial = np.array([0.1, 0.1])
-        x_initial = np.array([0. , 0. ])
-
-        method = 'L-BFGS-B'
-        bounds = np.array([[-0.3, 0.], [-0.1, 0.1]])
-
-        options = {'maxiter': 100, 'disp': True}  # CG or L-BFGS-B or Newton-CG
-        res = opt.minimize(fun=objective,
-                           x0=x_initial,
-                           method=method,
-                           jac=derivative,
-                           bounds=bounds,
-                           callback=None,
-                           options=options)
-
-        np.save(f'data/numpy/{self.case_name}/{self.mode}/obj_vals.npy', np.array(self.object_values))
-  
-
     def forward_runs(self):
         compute = False
         if compute:
@@ -309,14 +247,14 @@ class Wave(RVE):
                     self.compute_objective()
                     Z[i, j] = self.obj_val
 
-            np.save(f"data/numpy/{self.case_name}/{self.mode}/X.npy", X)
-            np.save(f"data/numpy/{self.case_name}/{self.mode}/Y.npy", Y)
-            np.save(f"data/numpy/{self.case_name}/{self.mode}/Z.npy", Z)
+            np.save(f"data/numpy/{self.case}/{self.mode}/X.npy", X)
+            np.save(f"data/numpy/{self.case}/{self.mode}/Y.npy", Y)
+            np.save(f"data/numpy/{self.case}/{self.mode}/Z.npy", Z)
 
         else:
-            X = np.load(f"data/numpy/{self.case_name}/{self.mode}/X.npy")
-            Y = np.load(f"data/numpy/{self.case_name}/{self.mode}/Y.npy")
-            Z = np.load(f"data/numpy/{self.case_name}/{self.mode}/Z.npy")
+            X = np.load(f"data/numpy/{self.case}/{self.mode}/X.npy")
+            Y = np.load(f"data/numpy/{self.case}/{self.mode}/Y.npy")
+            Z = np.load(f"data/numpy/{self.case}/{self.mode}/Z.npy")
 
             fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
 
@@ -368,7 +306,7 @@ class Wave(RVE):
 
 
 def main():
-    pde = Wave(case_name='wave', mode='band', problem='inverse')    
+    pde = Wave(domain='rve', case='wave', mode='band', problem='inverse')    
     pde.run()
 
 
