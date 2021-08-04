@@ -1,7 +1,8 @@
 import fenics as fe
 import dolfin_adjoint as da
-import ufl
 import scipy
+import glob
+import ufl
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -18,39 +19,32 @@ class Wave(RVE):
         super(Wave, self).__init__(domain, case, mode, problem)
 
 
+    def opt_prepare(self):
+        self.x_initial = np.array([0., 0., 0.5])
+        self.bounds = np.array([[-0.2, 0.], [-0.1, 0.1], [0.4, 0.6]])
+        self.maxiter = 3
+
+
     def compute_objective(self):
-        compress = -0.04
-        H = fe.as_matrix([[compress, 0.], [0., compress]])
+        lmd = 0.0
+        H = fe.as_matrix([[-lmd, 0.], [0., -lmd]])
         self.RVE_solve(H)
 
         self.raw_num_eigs = 32
         self.actual_num_eigs = self.raw_num_eigs // 2
-        self.cut_len = self.actual_num_eigs // 2
+        # self.cut_len = self.actual_num_eigs // 2
+        self.cut_len = 12
 
-        all_eigen_vals, all_eigen_vecs, all_dlambdas = self.kV_path('irreducible')
-        band_gap_grads = self.ks(all_eigen_vals)
+        self.all_eigen_vals, all_eigen_vecs, all_dlambdas = self.kV_path('irreducible')
+        band_gap_grads = self.ks(self.all_eigen_vals)
 
-        self.J = 0
-        for i in range(all_eigen_vals.shape[0]):
-            for j in range(all_eigen_vals.shape[1]):
-                self.J += float(band_gap_grads[i, j]) * all_dlambdas[i][j]
+        self.obj_val_AD = 0
+        for i in range(self.all_eigen_vals.shape[0]):
+            for j in range(self.all_eigen_vals.shape[1]):
+                self.obj_val_AD += float(band_gap_grads[i, j]) * all_dlambdas[i][j]
  
-        self.obj_val = self.true_obj_val(all_eigen_vals)
-        print(f'True band_val = {self.obj_val}')
-
-        print(all_eigen_vals.T)
-        omegas = np.sqrt(np.absolute(all_eigen_vals))
-        # plt.plot(all_eigen_vals, marker='o', color='black')
-        # for eigen_vals in all_eigen_vals.T:
-        #     plt.scatter(np.arange(len(eigen_vals)), eigen_vals, s=20.)
-        for omega in omegas.T:
-            plt.scatter(np.arange(len(omega)), omega, s=20., color='black')
-
-
-        plt.show()
-        exit()
-
-        return float(self.J)
+        self.true_obj_val = self.compute_true_obj_val(self.all_eigen_vals)
+        print(f'true_obj_val (true band gap) = {self.true_obj_val}')
 
 
     def kV_path(self, path):
@@ -74,30 +68,6 @@ class Wave(RVE):
                     kx = np.pi / A * (3 - kt)
                     ky = kx
                 ks.append((kx, ky))
-        elif path == 'full':
-            num_k = 41
-            kts = np.linspace(0, 4, num_k)
-            for kt in kts:
-                if kt < 1:
-                    kx = (2 * np.pi / A) * kt
-                    ky = 0.
-                elif kt < 2:
-                    kx = 2 * np.pi / A
-                    ky = (2 * np.pi / A) * (kt - 1)
-                elif kt < 3:
-                    kx = (2 * np.pi / A) * (3 - kt)
-                    ky = 2 * np.pi / A
-                else:
-                    kx = 0
-                    ky = (2 * np.pi / A) * (4 - kt)
-                ks.append((kx, ky))
-        elif path == 'partial':
-            num_k = 11
-            kts = np.linspace(1, 2, num_k)
-            for kt in kts:
-                kx = 2 * np.pi / A
-                ky = (2 * np.pi / A) * (kt - 1)
-                ks.append((kx, ky))
         else:
             raise ValueError(f'Unknown path: {path}')
 
@@ -120,14 +90,14 @@ class Wave(RVE):
         eigen_u.vector()[:] = eigen_vec
         uR, uI = eigen_u.split()
         uAu = da.assemble(self.assemble_A(uR, uI, uR, uI, kV))
-        uMu =  da.assemble(self.assemble_M(uR, uI, uR, uI))
+        uMu = da.assemble(self.assemble_M(uR, uI, uR, uI))
         # Remark(Tianju): dolfin_dajoint seems to have a bug here
         # float() must be applied, otherwise it loses dependency
         dlambda = (uAu - float(eigen_val) * uMu) / float(uMu)
         return dlambda
 
 
-    def true_obj_val(self, band_vals):
+    def compute_true_obj_val(self, band_vals):
         band_vals = np.absolute(band_vals)  
         eigen_vals_low_band = band_vals[:, :self.cut_len]
         eigen_vals_high_band = band_vals[:, self.cut_len:]
@@ -145,8 +115,8 @@ class Wave(RVE):
             min_high_band = -1 / rho * jax.scipy.special.logsumexp(-rho * eigen_vals_high_band)
             return max_low_band - min_high_band
 
-        self.band_val = band_gap(band_vals)
-        print(f"Approx band_val = {self.band_val }")
+        self.obj_val = band_gap(band_vals)
+        print(f"obj_val (approximated band gap) = {self.obj_val}")
         band_gap_grads = jax.grad(band_gap)(band_vals)
 
         return np.array(band_gap_grads)
@@ -162,8 +132,7 @@ class Wave(RVE):
 
 
     def assemble_M(self, uR, uI, vR, vI):
-         rho = 1.
-         m = rho * (fe.inner(uR, vR) * fe.dx + fe.inner(uI, vI) * fe.dx)
+         m = self.rho * (fe.inner(uR, vR) * fe.dx + fe.inner(uI, vI) * fe.dx)
          return m
 
 
@@ -187,23 +156,13 @@ class Wave(RVE):
         fe.assemble(a, tensor=A)
         fe.assemble(m, tensor=M)
 
-        # eigvals, eigvecs = scipy.sparse.linalg.eigs(A.array(), 10, M.array(), which='SM')
-        # eigvals = eigvals.real
-        # print(eigvals)
-        # exit()
-
-        # for bc in bcs:
-        #     bc.apply(A)
-        #     bc.apply(M)
-
         # Create eigensolver
         solver = fe.SLEPcEigenSolver(A, M)
         solver.parameters["solver"] = "krylov-schur"
         solver.parameters["problem_type"] = "gen_hermitian"
         solver.parameters["spectrum"] = "target magnitude"
         solver.parameters["spectral_transform"] = "shift-and-invert"
-        solver.parameters["spectral_shift"] = -1e-3
-        # solver.parameters["tolerence"] = 0.1
+        solver.parameters["spectral_shift"] = -1e5
 
         solver.solve(self.raw_num_eigs)
         
@@ -232,83 +191,63 @@ class Wave(RVE):
 
 
     def forward_runs(self):
-        compute = False
-        if compute:
-            x = np.linspace(-0.2, 0., 11)
-            y = np.linspace(-0.1, 0.1, 11)
-            X, Y = np.meshgrid(x, y, indexing="ij")
-            Z = np.zeros_like(X)
+        x_files = glob.glob(f'data/numpy/{self.domain}/{self.case}/{self.mode}/x_*')
+        x_opt = np.load(sorted(x_files)[-1])
+        x_initial = np.array([0., 0., 0.5])
 
-            for i, c1 in enumerate(x):
-                for j, c2 in enumerate(y):
-                    print(f"computing c1 = {c1}, c2 = {c2}")
-                    self.build_mesh()
-                    self.move_mesh(np.array([c1, c2]))
-                    self.compute_objective()
-                    Z[i, j] = self.obj_val
+        self.build_mesh()
+        self.move_mesh(x_opt)
+        self.compute_objective()
 
-            np.save(f"data/numpy/{self.case}/{self.mode}/X.npy", X)
-            np.save(f"data/numpy/{self.case}/{self.mode}/Y.npy", Y)
-            np.save(f"data/numpy/{self.case}/{self.mode}/Z.npy", Z)
+        print(self.all_eigen_vals.T)
+        omegas = np.sqrt(np.absolute(self.all_eigen_vals))
 
-        else:
-            X = np.load(f"data/numpy/{self.case}/{self.mode}/X.npy")
-            Y = np.load(f"data/numpy/{self.case}/{self.mode}/Y.npy")
-            Z = np.load(f"data/numpy/{self.case}/{self.mode}/Z.npy")
+        plt.figure()
+        for eigen_vals in self.all_eigen_vals.T:
+            plt.scatter(np.arange(len(eigen_vals)), eigen_vals, s=20., color='black')
 
-            fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+        plt.figure()
+        for omega in omegas.T:
+            plt.scatter(np.arange(len(omega)), omega, s=20., color='black')
 
-            surf = ax.plot_surface(X, Y, Z, cmap=cm.coolwarm,
-                                   linewidth=0)
-
-            # ax.set_zlim(-1.01, 1.01)
-            # ax.zaxis.set_major_locator(LinearLocator(10))
-            # A StrMethodFormatter is used automatically
-            # ax.zaxis.set_major_formatter('{x:.02f}')
-            # Add a color bar which maps values to colors.
-            fig.colorbar(surf, shrink=0.5, aspect=5)
-            plt.show()
-
+        plt.show()
+   
 
     def debug(self):
-        # h = np.array([-1e-5, 1e-5])
-        # h = np.array([1e-5, 0])
-        h = np.array([0, 1e-5])
-
-        x = np.array([-0.1, 0.1])
+        h = np.array([0, 1e-5, 0])
+        x = np.array([-0.1, 0.1, 0.5])
 
         self.build_mesh()
         self.move_mesh(x)
         self.compute_objective()
-        f = self.band_val
+        f = self.obj_val
         control = da.Control(self.delta)
-        dJdm = da.compute_gradient(self.J, control).values()
-
-        print(f"f = {f}, dJdm = {dJdm}")
+        dJdm = da.compute_gradient(self.obj_val_AD, control).values()
 
         x_h = x + h
         self.build_mesh()
         self.move_mesh(x_h)
         self.compute_objective()
-        f_h = self.band_val
+        f_h = self.obj_val
 
         x_2h = x + 2*h
         self.build_mesh()
         self.move_mesh(x_2h)
         self.compute_objective()
-        f_2h = self.band_val
+        f_2h = self.obj_val
 
-        print(f"f = {f}")
-
+        print(f"\n")
+        print(f"f = {f}, dJdm = {dJdm}")
         print(f"f_h - f = {f_h - f}, f_2h - f = {f_2h - f}")
         print(f"r_h = {f_h - f - np.dot(dJdm, h)}, r_2h = {f_2h - f - np.dot(dJdm, 2*h)}")
         print(f"finite difference: {(f_h - f)/h[1]}")
 
 
 def main():
-    pde = Wave(domain='rve', case='wave', mode='band', problem='inverse')    
+    pde = Wave(domain='rve', case='wave', mode='band', problem='forward')    
     pde.run()
 
 
 if __name__ == '__main__':
     main()
+    plt.show()

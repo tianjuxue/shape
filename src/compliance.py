@@ -149,7 +149,7 @@ class Compliance(PDECO):
         self.u = da.Function(V, name="v")
         du = fe.TrialFunction(V)
         v = fe.TestFunction(V)
-        energy_density, PK_stress, _, _ = NeoHookeanEnergyFluctuation(self.u, self.young_modulus, self.poisson_ratio, True, False)
+        energy_density, PK_stress, _, _ = NeoHookeanEnergyFluctuation(self.u, self.young_modulus, self.poisson_ratio, False)
         self.E = energy_density * fe.dx - fe.dot(traction, self.u) * self.ds(2)
 
         bcs = [da.DirichletBC(V, da.Constant((0., 0.)), self.left)]
@@ -220,17 +220,6 @@ class Compliance(PDECO):
         np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/obj_vals.npy', np.array(self.object_values))
  
 
-    def visualize_results(self):
-        object_values = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/obj_vals.npy')
-        fig = plt.figure()
-        plt.plot(object_values, linestyle='--', marker='o')
-        plt.tick_params(labelsize=14)
-        plt.xlabel("$N$ (Optimization steps)", fontsize=14)
-        plt.ylabel("$J$ (Objective)", fontsize=14)
-        fig.savefig(f'data/pdf/{self.domain}/{self.case}_obj.pdf', bbox_inches='tight')
-        plt.show()
-
-
 def main():
     pde = Compliance(domain='beam', case='compliance', mode='simple', problem='forward')
     pde.run()    
@@ -242,3 +231,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    plt.show()

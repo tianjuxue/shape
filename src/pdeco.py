@@ -8,6 +8,7 @@ import os
 import ufl
 import glob
 from pyadjoint.overloaded_type import create_overloaded_object
+from .dr_homo import DynamicRelaxSolve
 from . import arguments
 from .constituitive import *
 
@@ -40,13 +41,25 @@ class PDECO(object):
                 os.remove(f)
  
 
+    def visualize_results(self):
+        object_values = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/obj_vals.npy')
+        fig = plt.figure()
+        plt.plot(object_values, linestyle='--', marker='o', color='black')
+        plt.tick_params(labelsize=14)
+        plt.xlabel("$N$ (Optimization steps)", fontsize=14)
+        plt.ylabel("$J$ (Objective)", fontsize=14)
+        plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+        fig.savefig(f'data/pdf/{self.domain}/{self.case}/{self.mode}_obj.pdf', bbox_inches='tight')
+
+
 class RVE(PDECO):
     def __init__(self, domain, case, mode, problem):
         self.domain = domain
         self.case = case
         self.mode = mode
-        self.young_modulus = 1
+        self.young_modulus = 1e3
         self.poisson_ratio = 0.3
+        self.rho = 1.
         super(RVE, self).__init__(problem)
 
 
@@ -211,7 +224,7 @@ class RVE(PDECO):
 
     def adjoint_optimization(self):
         print(f"\n###################################################################")
-        print(f"Optimizing {self.case} - {self.mode}")
+        print(f"Optimizing {self.domain} - {self.case} - {self.mode}")
         print(f"###################################################################")
 
         self.object_values = []
@@ -225,7 +238,8 @@ class RVE(PDECO):
 
             self.build_mesh()
             self.move_mesh(x)
-            J = self.compute_objective()
+            self.compute_objective()
+            print(f"J = {self.obj_val}")
  
             vtkfile_mesh << self.disp
             if self.mode == 'von-mises':
@@ -234,34 +248,36 @@ class RVE(PDECO):
                 objective_aux.append(max_vm_stress)
                 print(f"max_vm_stress = {max_vm_stress}")
 
-            np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/h_{objective.count:03}.npy', x)
+            np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/x_{objective.count:03}.npy', x)
             objective.count += 1
-            self.object_values.append(J)
-            return J
+            self.object_values.append(self.obj_val)
+            return self.obj_val
 
         objective.count = 0
         objective_aux = []
 
         def derivative(x):
             control = da.Control(self.delta)
-            dJdm = da.compute_gradient(self.J, control)
+            dJdm = da.compute_gradient(self.obj_val_AD, control)
             da.set_working_tape(da.Tape())
 
             print(f"dJdm = {dJdm.values()}")
 
             return dJdm.values()
 
-        x_initial = np.array([0., 0., 0.5])
+        # self.x_initial = np.array([-0.2, 0.1, 0.5])
+        # bounds = np.array([[-0.2, 0.], [-0.1, 0.1], [0.45, 0.55]])
+        # self.bounds = np.array([[-0.2, -0.2], [0.1, 0.1], [0.4, 0.6]])
+        # bounds = np.array([[0., 0.], [0., 0.], [0.5, 0.5]])
 
-        method = 'L-BFGS-B'
-        bounds = np.array([[-0.3, 0.], [-0.1, 0.1], [0.5, 0.5]])
+        self.opt_prepare()
 
-        options = {'maxiter': 100, 'disp': True}  # CG or L-BFGS-B or Newton-CG
+        options = {'maxiter': self.maxiter, 'disp': True}  # CG or L-BFGS-B or Newton-CG
         res = opt.minimize(fun=objective,
-                           x0=x_initial,
-                           method=method,
+                           x0=self.x_initial,
+                           method='L-BFGS-B',
                            jac=derivative,
-                           bounds=bounds,
+                           bounds=self.bounds,
                            callback=None,
                            options=options)
 
@@ -270,24 +286,24 @@ class RVE(PDECO):
             np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/vm_stress.npy', np.array(objective_aux))
 
 
-    def RVE_solve(self, H, dr=True):
+    def RVE_solve(self, H, solve=True):
         self.V = fe.VectorFunctionSpace(self.mesh, 'CG', 1, constrained_domain=self.exterior_periodic)
         V_non_periodic = fe.VectorFunctionSpace(self.mesh, 'CG', 1)
         self.S = fe.FunctionSpace(self.mesh, 'DG', 0)
 
         self.u = da.Function(self.V, name="v")
-        du = fe.TrialFunction(self.V)
+        self.du = fe.TrialFunction(self.V)
         self.v = fe.TestFunction(self.V)
 
-        energy_density, self.PK_stress, self.L, self.sigma_v = NeoHookeanEnergyFluctuation(self.u, self.young_modulus, self.poisson_ratio, True, True, H)
+        energy_density, self.PK_stress, self.L, self.sigma_v = NeoHookeanEnergyFluctuation(self.u, self.young_modulus, self.poisson_ratio, True, H)
         self.E = energy_density * fe.dx
         self.bcs = [da.DirichletBC(self.V, da.Constant((0., 0.)), self.corner, method='pointwise')]
         dE = fe.derivative(self.E, self.u, self.v)
-        self.jacE = fe.derivative(dE, self.u, du)
+        self.jacE = fe.derivative(dE, self.u, self.du)
 
-        if dr:
+        if solve:
             nIters, convergence = DynamicRelaxSolve(dE, self.u, self.bcs, self.jacE)
-        da.solve(dE == 0, self.u, self.bcs, J=self.jacE)
+            da.solve(dE == 0, self.u, self.bcs, J=self.jacE)
 
         X = fe.SpatialCoordinate(self.mesh)
         self.disp = da.project(self.u + fe.dot(H, X), V_non_periodic)

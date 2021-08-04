@@ -16,7 +16,7 @@ def RightCauchyGreen(F):
     return F.T * F
 
 
-def NeoHookeanEnergyFluctuation(variable, young_modulus, poisson_ratio, return_stress, fluctuation, H_list=None):
+def NeoHookeanEnergyFluctuation(variable, young_modulus, poisson_ratio, fluctuation, H_list=None):
     shear_mod = young_modulus / (2 * (1 + poisson_ratio))
     bulk_mod = young_modulus / (3 * (1 - 2*poisson_ratio))
  
@@ -33,13 +33,11 @@ def NeoHookeanEnergyFluctuation(variable, young_modulus, poisson_ratio, return_s
     energy = ((shear_mod / 2) * (Jinv * (I1 + 1) - 3) +
               (bulk_mod / 2) * (J - 1)**2) 
  
-    if return_stress:
-        first_pk_stress = fe.diff(energy, F)
-        constitutive_tensor = fe.diff(first_pk_stress, F)
-        sigma_v = von_mises(first_pk_stress, F)
-        return energy, first_pk_stress, constitutive_tensor, sigma_v
 
-    return energy
+    first_pk_stress = fe.diff(energy, F)
+    constitutive_tensor = fe.diff(first_pk_stress, F)
+    sigma_v = von_mises(first_pk_stress, F)
+    return energy, first_pk_stress, constitutive_tensor, sigma_v
 
 
 def von_mises(first_pk_stress, F):

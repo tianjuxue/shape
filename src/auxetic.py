@@ -5,12 +5,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 from . import arguments
 from .pdeco import rve
-# from .constituitive import *
 
 
 class Auxetic(RVE):
     def __init__(self, case, mode, problem):
         super(Auxetic, self).__init__(case, mode, problem)
+
+
+    def opt_prepare(self):
+        # Define bounds and x_initial
+        pass
 
 
     def compute_objective(self):
@@ -58,15 +62,16 @@ class Auxetic(RVE):
         print(f"reg = {reg}, Vol = {Vol}")
         print(f"obj val = {float(self.J)}\n")
 
-        return float(self.J)
+        self.obj_val = self.J
+        self.obj_val_AD = self.J
 
 
     def forward_runs(self):
-        h_files = glob.glob(f'data/numpy/{self.case}/{self.mode}/h_*')
-        h = np.load(sorted(h_files)[-1])
+        x_files = glob.glob(f'data/numpy/{self.domain}/{self.case}/{self.mode}/x_*')
+        x_opt = np.load(sorted(x_files)[-1])
         self.build_mesh()
-        self.move_mesh(h)
-        vtkfile_mesh = fe.File(f'data/pvd/{self.case}/{self.mode}/{self.problem}/u.pvd')
+        self.move_mesh(x_opt)
+        vtkfile_mesh = fe.File(f'data/pvd/{self.domain}/{self.case}/{self.mode}/{self.problem}/u.pvd')
 
         energy = []
         force = []
@@ -102,10 +107,10 @@ class Auxetic(RVE):
             raise ValueError(f'Unknown mode: {self.mode}')
 
         if len(energy) > 0:
-            np.save(f'data/numpy/{self.case}/{self.mode}/energy.npy', np.array(energy))
+            np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/energy.npy', np.array(energy))
 
         if len(force) > 0:
-            np.save(f'data/numpy/{self.case}/{self.mode}/force.npy', np.array(force))
+            np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/force.npy', np.array(force))
  
 
         print(f'energy = {energy}')
@@ -113,8 +118,8 @@ class Auxetic(RVE):
 
 
     def plot_forward_runs(self):
-        force = np.load(f'data/numpy/{self.case}/{self.mode}/force.npy')
-        energy = np.load(f'data/numpy/{self.case}/{self.mode}/energy.npy')
+        force = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/force.npy')
+        energy = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/energy.npy')
  
         fig = plt.figure(0)
         plt.plot(base_energy, linestyle='--', marker='o', color='blue')
@@ -131,7 +136,7 @@ class Auxetic(RVE):
 
     def debug(self):
         self.build_mesh()
-        vtkfile_F = fe.File(f'data/pvd/{self.case}/{self.mode}/{self.problem}/F.pvd')
+        vtkfile_F = fe.File(f'data/pvd/{self.domain}/{self.case}/{self.mode}/{self.problem}/F.pvd')
         D = fe.TensorFunctionSpace(self.mesh, 'DG', 0)
         delta = da.Constant([0.1, 0.1])
         s = self.mesh_deformation(delta)
