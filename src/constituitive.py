@@ -1,29 +1,48 @@
 import fenics as fe
 
 
-def DeformationGradientFluctuation(v, H):
-    grad_u = fe.grad(v) + H  
+def mapped_grad_wrapper(s):
+    def mapped_grad(u):
+        I = fe.Identity(u.geometric_dimension())
+        return fe.dot(fe.grad(u), fe.inv(fe.grad(s) + I))
+    if s is None:
+        return fe.grad
+    else:
+        return mapped_grad
+
+
+def mapped_J_wrapper(s):
+    if s is None:
+        return 1.
+    else:
+        I = fe.Identity(s.geometric_dimension())
+        return fe.det(fe.grad(s) + I) 
+
+
+def DeformationGradientFluctuation(grad, v, H):
     I = fe.Identity(v.geometric_dimension())
+    grad_u = grad(v) + H      
     return I + grad_u
 
 
-def DeformationGradient(u):
+def DeformationGradient(grad, u):
     I = fe.Identity(u.geometric_dimension())
-    return fe.variable(I + fe.grad(u))
+    return fe.variable(I + grad(u))
 
 
 def RightCauchyGreen(F):
     return F.T * F
 
 
-def NeoHookeanEnergyFluctuation(variable, young_modulus, poisson_ratio, fluctuation, H_list=None):
+def NeoHookeanEnergyFluctuation(mesh_disp, variable, young_modulus, poisson_ratio, fluctuation, H_list=None):
     shear_mod = young_modulus / (2 * (1 + poisson_ratio))
     bulk_mod = young_modulus / (3 * (1 - 2*poisson_ratio))
- 
+
+    grad = mapped_grad_wrapper(mesh_disp)
     if fluctuation:
-        F = DeformationGradientFluctuation(variable, H_list)
+        F = DeformationGradientFluctuation(grad, variable, H_list)
     else:
-        F = DeformationGradient(variable)
+        F = DeformationGradient(grad, variable)
 
     F = fe.variable(F)
     J = fe.det(F)
@@ -33,7 +52,6 @@ def NeoHookeanEnergyFluctuation(variable, young_modulus, poisson_ratio, fluctuat
     energy = ((shear_mod / 2) * (Jinv * (I1 + 1) - 3) +
               (bulk_mod / 2) * (J - 1)**2) 
  
-
     first_pk_stress = fe.diff(energy, F)
     constitutive_tensor = fe.diff(first_pk_stress, F)
     sigma_v = von_mises(first_pk_stress, F)
@@ -47,10 +65,10 @@ def von_mises(first_pk_stress, F):
 	return fe.sqrt(3*J2)
 
 
-def epsilon(u):
-    return fe.sym(fe.grad(u))
+# def epsilon(u):
+#     return fe.sym(fe.grad(u))
 
  
-def sigma(L, u):
-    strain = epsilon(u) 
-    return fe.as_tensor(L[i, j, k, l] * strain[k, l], [i, j])
+# def sigma(L, u):
+#     strain = epsilon(u) 
+#     return fe.as_tensor(L[i, j, k, l] * strain[k, l], [i, j])

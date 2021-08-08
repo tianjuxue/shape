@@ -49,13 +49,15 @@ class Buckling(RVE):
     def compute_objective_helper(self, lmd, initial):
         self.H = fe.as_matrix([[-lmd, 0.], [0., -lmd]])
         self.RVE_solve(self.H, solve=False)
-        dummy_l = fe.dot(da.Constant((0., 0.)), self.v) * fe.dx(domain=self.mesh)
+        
         A = fe.PETScMatrix()
-        M = fe.PETScMatrix()
-        m = self.rho * fe.inner(self.du, self.v) * fe.dx
+        M = fe.PETScMatrix() 
+        m = self.assemble_M(self.du, self.v)
+
         fe.assemble(m, tensor=M)
         fe.assemble(self.jacE, tensor=A)   
         # b = fe.PETScVector()
+        # dummy_l = fe.dot(da.Constant((0., 0.)), self.v) * fe.dx(domain=self.mesh)
         # fe.assemble_system(self.jacE, dummy_l, self.bcs, A_tensor=A, b_tensor=b)
 
         solver = fe.SLEPcEigenSolver(A, M)
@@ -84,8 +86,13 @@ class Buckling(RVE):
                 eigen_u = fe.Function(self.V, name='e')
                 for eigen_vec in self.eigen_vecs:
                     eigen_u.vector()[:] = eigen_vec
-                    # eigen_u.rename("e", "e")
-                    vtkfile_eigen << eigen_u
+                    if self.move_mesh_flag:
+                        vtkfile_eigen << eigen_u
+                    else:  
+                        eigen_u_proj = fe.project(self.s + eigen_u, self.V_non_periodic)
+                        eigen_u_proj.rename('e', 'e')
+                        vtkfile_eigen << eigen_u_proj
+
         else:
             self.eigen_vals, self.eigen_vecs = self.sort_by_initial_eigenvecs(self.eigen_vals, self.eigen_vecs)
 
@@ -121,15 +128,21 @@ class Buckling(RVE):
     def lamda_derivative(self, eigen_val, eigen_vec):
         eigen_u = da.Function(self.V)
         eigen_u.vector()[:] = eigen_vec
+
         dE = fe.derivative(self.E, self.u, eigen_u)
         jacE = fe.derivative(dE, self.u, eigen_u)
         uAu = da.assemble(jacE)
-        # uu = np.dot(eigen_vec.get_local(), eigen_vec.get_local())
-        # dlambda = uAu / float(uu)
-        uMu = da.assemble(fe.inner(eigen_u, eigen_u) * fe.dx)
+        uMu = da.assemble(self.assemble_M(eigen_u, eigen_u))
+
         dlambda = (uAu - float(eigen_val) * uMu) / float(uMu)
         return dlambda
  
+
+    def assemble_M(self, u, v):
+        mapped_J = mapped_J_wrapper(self.s)
+        m = self.rho * fe.inner(u, v) * mapped_J * fe.dx
+        return m
+
 
     def forward_runs_helper(self):
         selected_eigen_vals = []
@@ -211,7 +224,7 @@ class Buckling(RVE):
 
 
 def main():
-    pde = Buckling(domain='rve', case='buckling', mode='poreB', problem='forward')    
+    pde = Buckling(domain='rve', case='buckling', mode='poreB', problem='inverse')    
     pde.run()
 
 

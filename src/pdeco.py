@@ -60,6 +60,7 @@ class RVE(PDECO):
         self.young_modulus = 1e3
         self.poisson_ratio = 0.3
         self.rho = 1.
+        self.move_mesh_flag = False
         super(RVE, self).__init__(problem)
 
 
@@ -149,7 +150,7 @@ class RVE(PDECO):
         self.interior.mark(boundaries, 5)
         self.ds = fe.Measure('ds')(subdomain_data=boundaries)
         self.n = fe.FacetNormal(self.mesh)
-        self.Vol0 = da.assemble(da.Constant(1.) * fe.dx(domain=self.mesh))
+        # self.Vol0 = da.assemble(da.Constant(1.) * fe.dx(domain=self.mesh))
 
 
     def compute_disp(self, params):
@@ -174,8 +175,10 @@ class RVE(PDECO):
 
     def move_mesh(self, delta_val):
         self.delta = da.Constant(delta_val)
-        s = self.mesh_deformation(self.delta)
-        fe.ALE.move(self.mesh, s)
+        self.s = self.mesh_deformation(self.delta)
+        if self.move_mesh_flag:
+            fe.ALE.move(self.mesh, self.s)
+            self.s = None
 
 
     def mesh_deformation(self, delta):
@@ -243,8 +246,8 @@ class RVE(PDECO):
  
             vtkfile_mesh << self.disp
             if self.mode == 'von-mises':
-                vtkfile_stress << self.s
-                max_vm_stress = np.max(self.s.vector()[:])
+                vtkfile_stress << self.vm_s
+                max_vm_stress = np.max(self.vm_s.vector()[:])
                 objective_aux.append(max_vm_stress)
                 print(f"max_vm_stress = {max_vm_stress}")
 
@@ -288,15 +291,16 @@ class RVE(PDECO):
 
     def RVE_solve(self, H, solve=True):
         self.V = fe.VectorFunctionSpace(self.mesh, 'CG', 1, constrained_domain=self.exterior_periodic)
-        V_non_periodic = fe.VectorFunctionSpace(self.mesh, 'CG', 1)
+        self.V_non_periodic = fe.VectorFunctionSpace(self.mesh, 'CG', 1)
         self.S = fe.FunctionSpace(self.mesh, 'DG', 0)
 
         self.u = da.Function(self.V, name="v")
         self.du = fe.TrialFunction(self.V)
         self.v = fe.TestFunction(self.V)
 
-        energy_density, self.PK_stress, self.L, self.sigma_v = NeoHookeanEnergyFluctuation(self.u, self.young_modulus, self.poisson_ratio, True, H)
-        self.E = energy_density * fe.dx
+        mapped_J = mapped_J_wrapper(self.s)
+        energy_density, self.PK_stress, self.L, self.sigma_v = NeoHookeanEnergyFluctuation(self.s, self.u, self.young_modulus, self.poisson_ratio, True, H)
+        self.E = energy_density * mapped_J * fe.dx
         self.bcs = [da.DirichletBC(self.V, da.Constant((0., 0.)), self.corner, method='pointwise')]
         dE = fe.derivative(self.E, self.u, self.v)
         self.jacE = fe.derivative(dE, self.u, self.du)
@@ -305,9 +309,16 @@ class RVE(PDECO):
             nIters, convergence = DynamicRelaxSolve(dE, self.u, self.bcs, self.jacE)
             da.solve(dE == 0, self.u, self.bcs, J=self.jacE)
 
-        X = fe.SpatialCoordinate(self.mesh)
-        self.disp = da.project(self.u + fe.dot(H, X), V_non_periodic)
+        if self.move_mesh_flag:
+            X = fe.SpatialCoordinate(self.mesh)
+            self.disp = fe.project(self.u + fe.dot(H, X), self.V_non_periodic)
+        else:
+            X_tilde = fe.SpatialCoordinate(self.mesh)
+            X = X_tilde + self.s
+            self.disp = fe.project(self.s + self.u + fe.dot(H, X), self.V_non_periodic)
+
         self.disp.rename("u", "u")
+
 
         # if self.problem == 'forward':
         #     xdmf_file_sols = fe.XDMFFile(f'data/xdmf/{self.case}/{self.problem}/sols.xdmf')    

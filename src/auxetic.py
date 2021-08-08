@@ -4,66 +4,71 @@ import glob
 import numpy as np
 import matplotlib.pyplot as plt
 from . import arguments
-from .pdeco import rve
+from .pdeco import RVE
+from .constituitive import *
 
 
 class Auxetic(RVE):
-    def __init__(self, case, mode, problem):
-        super(Auxetic, self).__init__(case, mode, problem)
+    def __init__(self, domain, case, mode, problem):
+        super(Auxetic, self).__init__(domain, case, mode, problem)
 
 
     def opt_prepare(self):
-        # Define bounds and x_initial
-        pass
+        self.x_initial = np.array([0., 0., 0.5])
+        self.bounds = np.array([[-0.2, 0.], [-0.1, 0.1], [0.5, 0.5]])
+        self.maxiter = 100
 
 
     def compute_objective(self):
-        alpha = 1e3
-        Vol = da.assemble(da.Constant(1.) * fe.dx(domain=self.mesh))
-        reg = alpha * (Vol - self.Vol0)**2
-
-        reg = 0
-
+        mapped_J = mapped_J_wrapper(self.s)
         if self.mode == 'normal':
             H = fe.as_matrix([[-0.04, 0.], [0., -0.1]])
             self.RVE_solve(H)
-            PK_11 = da.assemble(self.PK_stress[0, 0]*fe.dx)
-            self.J = PK_11**2 + reg
+            PK_11 = da.assemble(self.PK_stress[0, 0] * mapped_J * fe.dx)
+            self.J = PK_11**2
         elif self.mode == 'shear':
             H = fe.as_matrix([[0., 0.3], [0., -0.125]])
-            # H = fe.as_matrix([[0., 0.], [0., -0.125]])
             self.RVE_solve(H)
-            PK_12 = da.assemble(self.PK_stress[0, 1]*fe.dx)
-            self.J = PK_12**2 + reg
+            PK_12 = da.assemble(self.PK_stress[0, 1] * mapped_J * fe.dx)
+            self.J = PK_12**2
         elif self.mode == 'min_energy':
             H = fe.as_matrix([[0., 0.], [0., -0.1]])
             self.RVE_solve(H)
             energy = da.assemble(self.E)
-            self.J = energy + reg
+            self.J = energy
             print(f"energy = {energy}")
         elif self.mode == 'max_energy':
             H = fe.as_matrix([[0., 0.], [0., -0.1]])
             self.RVE_solve(H)
-            force = da.assemble(self.PK_stress[1, 1]*fe.dx)
+            force = da.assemble(self.PK_stress[1, 1] * mapped_J * fe.dx)
             energy = -1e2*da.assemble(self.E)
-            self.J = energy + reg
+            self.J = energy
             print(f"energy = {energy}")
         elif self.mode == 'von-mises':
             self.RVE_solve(fe.as_matrix([[0., 0.], [0., -0.1]]))
-            force = da.assemble(self.PK_stress[1, 1]*fe.dx)
-            von_mises = 1e-6*da.assemble(self.sigma_v**4 * fe.dx)
-            self.J = von_mises + 1e-1 * (force + 2.995)**2 + reg
-            self.s = da.project(self.sigma_v, self.S)
-            self.s.rename("s", "s")
+            force = da.assemble(self.PK_stress[1, 1] * mapped_J * fe.dx)
+            von_mises = 1e-6*da.assemble(self.sigma_v**4 * mapped_J * fe.dx)
+            self.J = von_mises + 1e-1 * (force + 2.995)**2
+            self.vm_s = da.project(self.sigma_v, self.S)
+            self.vm_s.rename("s", "s")
             print(f"von_mises = {von_mises}, force = {force}")
         else:
             raise ValueError(f'Unknown mode: {self.mode}')
 
-        print(f"reg = {reg}, Vol = {Vol}")
-        print(f"obj val = {float(self.J)}\n")
-
         self.obj_val = self.J
         self.obj_val_AD = self.J
+
+
+    def forward_runs_plot_energy(self, boundary_disp, energy):
+        fig = plt.figure()
+        plt.plot(boundary_disp, energy, marker='o', color='black')
+        plt.tick_params(labelsize=14)
+        plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+        plt.xlabel("$\overline{H}_{11}$", fontsize=16)
+        plt.ylabel("$\overline{W}/E$", fontsize=16)
+        # plt.legend()
+        # plt.yticks(rotation=90)
+        fig.savefig(f'data/pdf/{self.domain}/{self.case}/{self.mode}_energy.pdf', bbox_inches='tight')
 
 
     def forward_runs(self):
@@ -112,9 +117,10 @@ class Auxetic(RVE):
         if len(force) > 0:
             np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/force.npy', np.array(force))
  
-
         print(f'energy = {energy}')
         print(f'force = {force}')
+
+        self.forward_runs_plot_energy(boundary_disp, energy)
 
 
     def plot_forward_runs(self):
@@ -130,35 +136,19 @@ class Auxetic(RVE):
         plt.show()
 
 
-    def visualize_results(self):
-        pass
-
-
     def debug(self):
-        self.build_mesh()
-        vtkfile_F = fe.File(f'data/pvd/{self.domain}/{self.case}/{self.mode}/{self.problem}/F.pvd')
-        D = fe.TensorFunctionSpace(self.mesh, 'DG', 0)
-        delta = da.Constant([0.1, 0.1])
-        s = self.mesh_deformation(delta)
-        F = fe.Identity(2) + fe.grad(s)
-        proj_1 = da.project(F, D)
-        fe.ALE.move(self.mesh, s)
-        F_inv = fe.Identity(2) - fe.grad(s)
-        proj_2 = da.project(F_inv * proj_1, D)
-        proj_2.rename("F", "F")
-        vtkfile_F << proj_2
+        pass
 
 
 def main():
     # pde = RVE(case='rve', problem='inverse', mode='normal')
     # pde.run()
-
     # modes = ['normal', 'shear', 'max_energy', 'min_energy', 'von-mises']
-    modes = ['normal']
-    for mode in modes:
-        pde = RVE(domain='rve', case='auxetic', mode=mode, problem='debug')    
-        pde.run()
+
+    pde = Auxetic(domain='rve', case='auxetic', mode='shear', problem='forward')    
+    pde.run()
 
 
 if __name__ == '__main__':
     main()
+    plt.show()

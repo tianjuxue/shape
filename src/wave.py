@@ -11,7 +11,7 @@ from matplotlib import cm
 from matplotlib.ticker import LinearLocator 
 from . import arguments
 from .pdeco import RVE
-# from .constituitive import *
+from .constituitive import *
 
 
 class Wave(RVE):
@@ -45,6 +45,20 @@ class Wave(RVE):
  
         self.true_obj_val = self.compute_true_obj_val(self.all_eigen_vals)
         print(f'true_obj_val (true band gap) = {self.true_obj_val}')
+
+
+        # self.obj_val_AD = all_dlambdas[2][3]
+        # self.obj_val = self.all_eigen_vals[2][3]
+
+
+    # def single_kV(self):
+    #     A = 2 * self.L0 
+    #     ne = 3
+    #     kx = (np.pi / A) * 0.5
+    #     ky = 0.
+    #     kV = da.Constant((kx, ky))
+    #     eigen_vals, eigen_vecs = self.eigen_solver(kV)
+    #     dlambda = self.lamda_derivative(eigen_vals[ne], eigen_vecs[ne], kV)
 
 
     def kV_path(self, path):
@@ -123,17 +137,20 @@ class Wave(RVE):
 
 
     def assemble_A(self, uR, uI, vR, vI, kV):
+        mapped_J = mapped_J_wrapper(self.s)
+        grad = mapped_grad_wrapper(self.s)
         i, j, k, l = ufl.indices(4)
-        a = self.L[i, j, k, l] * (fe.grad(uR)[k, l] * fe.grad(vR)[i, j] + fe.grad(uI)[k, l] * fe.grad(vI)[i, j] + \
+        a = self.L[i, j, k, l] * (grad(uR)[k, l] * grad(vR)[i, j] + grad(uI)[k, l] * grad(vI)[i, j] + \
                                   kV[l] * kV[j] * (uR[k] * vR[i] + uI[k] * vI[i]) + \
-                                  (uR[k] * fe.grad(vI)[i, j] - uI[k] * fe.grad(vR)[i, j]) * kV[l] - \
-                                  (vI[i] * fe.grad(uR)[k, l] - vR[i] * fe.grad(uI)[k, l]) * kV[j]) * fe.dx
+                                  (uR[k] * grad(vI)[i, j] - uI[k] * grad(vR)[i, j]) * kV[l] - \
+                                  (vI[i] * grad(uR)[k, l] - vR[i] * grad(uI)[k, l]) * kV[j]) * mapped_J * fe.dx
         return a
 
 
     def assemble_M(self, uR, uI, vR, vI):
-         m = self.rho * (fe.inner(uR, vR) * fe.dx + fe.inner(uI, vI) * fe.dx)
-         return m
+        mapped_J = mapped_J_wrapper(self.s)
+        m = self.rho * (fe.inner(uR, vR) + fe.inner(uI, vI)) * mapped_J * fe.dx
+        return m
 
 
     def eigen_solver(self, kV):  
@@ -195,6 +212,9 @@ class Wave(RVE):
         x_opt = np.load(sorted(x_files)[-1])
         x_initial = np.array([0., 0., 0.5])
 
+        print(x_opt)
+        exit()
+
         self.build_mesh()
         self.move_mesh(x_opt)
         self.compute_objective()
@@ -215,7 +235,8 @@ class Wave(RVE):
 
     def debug(self):
         h = np.array([0, 1e-5, 0])
-        x = np.array([-0.1, 0.1, 0.5])
+        # x = np.array([-0.1, 0., 0.5])
+        x = np.array([ 0., -0.065, 0.551])
 
         self.build_mesh()
         self.move_mesh(x)
@@ -244,7 +265,7 @@ class Wave(RVE):
 
 
 def main():
-    pde = Wave(domain='rve', case='wave', mode='band', problem='forward')    
+    pde = Wave(domain='rve', case='wave', mode='band', problem='post-processing')    
     pde.run()
 
 
