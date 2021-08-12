@@ -14,9 +14,9 @@ class Auxetic(RVE):
 
 
     def opt_prepare(self):
-        self.x_initial = np.array([0., 0., 0.5])
+        self.x_ini = np.array([0., 0., 0.5])
         self.bounds = np.array([[-0.2, 0.], [-0.1, 0.1], [0.5, 0.5]])
-        self.maxiter = 100
+        self.maxstep = 100
 
 
     def compute_objective(self):
@@ -61,79 +61,83 @@ class Auxetic(RVE):
 
     def forward_runs_plot_energy(self, boundary_disp, energy):
         fig = plt.figure()
-        plt.plot(boundary_disp, energy, marker='o', color='black')
+        plt.plot(boundary_disp, energy/(self.L0*2)**2/self.young_modulus, marker='o', color='black')
         plt.tick_params(labelsize=14)
         plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
-        plt.xlabel("$\overline{H}_{11}$", fontsize=16)
-        plt.ylabel("$\overline{W}/E$", fontsize=16)
+
+        if self.mode == 'normal':
+            xlabel = r'$\overline{H}_{11}$'
+        else:
+            xlabel = r'$\overline{H}_{12}$'
+
+        plt.xlabel(xlabel, fontsize=16)
+        plt.ylabel(r'$\overline{W}/E$', fontsize=16)
         # plt.legend()
         # plt.yticks(rotation=90)
         fig.savefig(f'data/pdf/{self.domain}/{self.case}/{self.mode}_energy.pdf', bbox_inches='tight')
 
 
     def forward_runs(self):
-        x_files = glob.glob(f'data/numpy/{self.domain}/{self.case}/{self.mode}/x_*')
-        x_opt = np.load(sorted(x_files)[-1])
+        variable_values = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/var_vals.npy')
+        x_opt = variable_values[-1]
+
         self.build_mesh()
         self.move_mesh(x_opt)
         vtkfile_mesh = fe.File(f'data/pvd/{self.domain}/{self.case}/{self.mode}/{self.problem}/u.pvd')
 
-        energy = []
-        force = []
-        if self.mode == 'normal':
-            boundary_disp = np.linspace(0, -0.08, 11)
-            for H11 in boundary_disp:
-                H = fe.as_matrix([[H11, 0.], [0., -0.1]])
-                self.RVE_solve(H)
-                vtkfile_mesh << self.disp
-                e = da.assemble(self.E)
-                energy.append(e)
-                print(f"H11 = {H11}")
-                print(f"e = {e}")
-        elif self.mode == 'shear':
-            boundary_disp = np.linspace(0, 0.6, 11)
-            for H12 in boundary_disp:
-                H = fe.as_matrix([[0., H12], [0., -0.125]])
-                self.RVE_solve(H)
-                vtkfile_mesh << self.disp
-                e = da.assemble(self.E)
-                energy.append(e)
-                print(f"H12 = {H12}")
-                print(f"e = {e}")
-        elif self.mode == 'min_energy' or self.mode == 'max_energy':
-            boundary_disp = np.linspace(0, -0.125, 11)
-            for H22 in boundary_disp:
-                H = fe.as_matrix([[0., 0.], [0., H22]])
-                self.RVE_solve(H)
-                vtkfile_mesh << self.disp
-                f = da.assemble(self.PK_stress[1, 1]*self.ds(4))
-                force.append(f)
+        cache = True
+        if cache:
+            boundary_disp = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/disp.npy')
+            energy = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/energy.npy')
+            force = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/force.npy')
         else:
-            raise ValueError(f'Unknown mode: {self.mode}')
+            energy = []
+            force = []
+            if self.mode == 'normal':
+                boundary_disp = np.linspace(0, -0.08, 11)
+                for H11 in boundary_disp:
+                    H = fe.as_matrix([[H11, 0.], [0., -0.1]])
+                    self.RVE_solve(H)
+                    vtkfile_mesh << self.disp
+                    e = da.assemble(self.E)
+                    energy.append(e)
+                    print(f"H11 = {H11}")
+                    print(f"e = {e}")
+            elif self.mode == 'shear':
+                boundary_disp = np.linspace(0, 0.6, 11)
+                for H12 in boundary_disp:
+                    H = fe.as_matrix([[0., H12], [0., -0.125]])
+                    self.RVE_solve(H)
+                    vtkfile_mesh << self.disp
+                    e = da.assemble(self.E)
+                    energy.append(e)
+                    print(f"H12 = {H12}")
+                    print(f"e = {e}")
+            elif self.mode == 'min_energy' or self.mode == 'max_energy':
+                boundary_disp = np.linspace(0, -0.125, 11)
+                for H22 in boundary_disp:
+                    H = fe.as_matrix([[0., 0.], [0., H22]])
+                    self.RVE_solve(H)
+                    vtkfile_mesh << self.disp
+                    f = da.assemble(self.PK_stress[1, 1]*self.ds(4))
+                    force.append(f)
+            else:
+                raise ValueError(f'Unknown mode: {self.mode}')
 
-        if len(energy) > 0:
-            np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/energy.npy', np.array(energy))
+            np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/disp.npy', boundary_disp)
 
-        if len(force) > 0:
-            np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/force.npy', np.array(force))
+            if len(energy) > 0:
+                energy = np.array(energy)
+                np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/energy.npy', energy)
+
+            if len(force) > 0:
+                force = np.array(force)
+                np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/force.npy', force)
  
-        print(f'energy = {energy}')
-        print(f'force = {force}')
+            print(f'energy = {energy}')
+            print(f'force = {force}')
 
         self.forward_runs_plot_energy(boundary_disp, energy)
-
-
-    def plot_forward_runs(self):
-        force = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/force.npy')
-        energy = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/energy.npy')
- 
-        fig = plt.figure(0)
-        plt.plot(base_energy, linestyle='--', marker='o', color='blue')
-        plt.plot(opt_energy, linestyle='--', marker='o', color='red')        
-        fig = plt.figure(1)
-        plt.plot(base_force, linestyle='--', marker='o', color='blue')
-        plt.plot(opt_force, linestyle='--', marker='o', color='red')
-        plt.show()
 
 
     def debug(self):
@@ -145,10 +149,10 @@ def main():
     # pde.run()
     # modes = ['normal', 'shear', 'max_energy', 'min_energy', 'von-mises']
 
-    pde = Auxetic(domain='rve', case='auxetic', mode='shear', problem='forward')    
+    pde = Auxetic(domain='rve', case='auxetic', mode='shear', problem='post-processing')    
     pde.run()
 
 
 if __name__ == '__main__':
     main()
-    plt.show()
+    # plt.show()

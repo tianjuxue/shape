@@ -18,6 +18,8 @@ class Compliance(PDECO):
         self.mode = mode
         self.young_modulus = 100
         self.poisson_ratio = 0.3
+        self.shear_mod = self.young_modulus / (2 * (1 + self.poisson_ratio))
+        self.bulk_mod = self.young_modulus / (3 * (1 - 2*self.poisson_ratio))
         self.move_mesh_flag = True
         super(Compliance, self).__init__(problem)
 
@@ -150,7 +152,7 @@ class Compliance(PDECO):
         self.u = da.Function(V, name="v")
         du = fe.TrialFunction(V)
         v = fe.TestFunction(V)
-        energy_density, PK_stress, _, _ = NeoHookeanEnergyFluctuation(None, self.u, self.young_modulus, self.poisson_ratio, False)
+        energy_density, PK_stress, _, _ = NeoHookeanEnergyFluctuation(None, self.u, self.shear_mod, self.bulk_mod, False)
         self.E = energy_density * fe.dx - fe.dot(traction, self.u) * self.ds(2)
 
         bcs = [da.DirichletBC(V, da.Constant((0., 0.)), self.left)]

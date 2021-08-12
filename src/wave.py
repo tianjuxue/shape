@@ -20,21 +20,27 @@ class Wave(RVE):
 
 
     def opt_prepare(self):
-        self.x_initial = np.array([0., 0., 0.5])
+        self.x_ini = np.array([0., 0., 0.5])
         self.bounds = np.array([[-0.2, 0.], [-0.1, 0.1], [0.4, 0.6]])
-        self.maxiter = 3
-
-
-    def compute_objective(self):
-        lmd = 0.0
-        H = fe.as_matrix([[-lmd, 0.], [0., -lmd]])
-        self.RVE_solve(H)
+        self.maxstep = 20
+        if self.mode == 'undeformed':
+            self.lmd = 0.
+            self.ylim = (-0.1, 1.8)
+        elif self.mode == 'deformed':
+            self.lmd = 0.1
+            self.ylim = (-0.1, 1.9)
+        else:
+            raise ValueError(f'Unknown mode: {self.mode}')            
 
         self.raw_num_eigs = 32
         self.actual_num_eigs = self.raw_num_eigs // 2
         # self.cut_len = self.actual_num_eigs // 2
         self.cut_len = 12
 
+
+    def compute_objective(self):
+        H = fe.as_matrix([[-self.lmd, 0.], [0., -self.lmd]])
+        self.RVE_solve(H)
         self.all_eigen_vals, all_eigen_vecs, all_dlambdas = self.kV_path('irreducible')
         band_gap_grads = self.ks(self.all_eigen_vals)
 
@@ -45,20 +51,6 @@ class Wave(RVE):
  
         self.true_obj_val = self.compute_true_obj_val(self.all_eigen_vals)
         print(f'true_obj_val (true band gap) = {self.true_obj_val}')
-
-
-        # self.obj_val_AD = all_dlambdas[2][3]
-        # self.obj_val = self.all_eigen_vals[2][3]
-
-
-    # def single_kV(self):
-    #     A = 2 * self.L0 
-    #     ne = 3
-    #     kx = (np.pi / A) * 0.5
-    #     ky = 0.
-    #     kV = da.Constant((kx, ky))
-    #     eigen_vals, eigen_vecs = self.eigen_solver(kV)
-    #     dlambda = self.lamda_derivative(eigen_vals[ne], eigen_vecs[ne], kV)
 
 
     def kV_path(self, path):
@@ -207,31 +199,58 @@ class Wave(RVE):
         return eigen_vals, eigen_vecs
 
 
-    def forward_runs(self):
-        x_files = glob.glob(f'data/numpy/{self.domain}/{self.case}/{self.mode}/x_*')
-        x_opt = np.load(sorted(x_files)[-1])
-        x_initial = np.array([0., 0., 0.5])
-
-        print(x_opt)
-        exit()
-
+    def forward_runs_helper(self, x):
         self.build_mesh()
-        self.move_mesh(x_opt)
+        self.move_mesh(x)
         self.compute_objective()
+        omega = np.sqrt(np.absolute(self.all_eigen_vals)) * (2*self.L0) / (2*np.pi*self.cT)
+        return omega
 
-        print(self.all_eigen_vals.T)
-        omegas = np.sqrt(np.absolute(self.all_eigen_vals))
 
-        plt.figure()
-        for eigen_vals in self.all_eigen_vals.T:
-            plt.scatter(np.arange(len(eigen_vals)), eigen_vals, s=20., color='black')
+    def forward_runs_plot(self, omega, name):
+        # print(self.all_eigen_vals.T)
+        # plt.figure()
+        # for eigen_vals in self.all_eigen_vals.T:
+        #     plt.scatter(np.arange(len(eigen_vals)), eigen_vals, s=10., color='black')
 
-        plt.figure()
-        for omega in omegas.T:
-            plt.scatter(np.arange(len(omega)), omega, s=20., color='black')
+        fig, ax = plt.subplots(figsize=(6, 6))
+        for w in omega.T:
+            plt.scatter(np.arange(len(w)), w, s=10., color='black')
 
-        plt.show()
-   
+        low_omega = np.max(omega[:, :self.cut_len])
+        high_omega = np.min(omega[:, self.cut_len:])
+        plt.ylim(self.ylim)
+        plt.tick_params(labelsize=14)
+        plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+        plt.xticks([0, 10, 20, 30], [r'$G$', r'$X$', r'$M$', r'$G$'])
+        plt.xlabel(r'$\boldsymbol{k}$', fontsize=16)
+        plt.ylabel(r'$\frac{\omega L_0}{\pi c_T} $', fontsize=24)
+        rect = plt.Rectangle((0, low_omega), 30, high_omega - low_omega, facecolor='black', alpha=0.3)
+        ax.add_patch(rect)
+        fig.savefig(f'data/pdf/{self.domain}/{self.case}/{self.mode}_{name}_w.pdf', bbox_inches='tight')
+  
+
+    def forward_runs(self):
+        self.opt_prepare()
+
+        cache = False
+        if cache:
+            omega_ini = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/omega_ini.npy')
+            omega_opt = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/omega_opt.npy')
+
+        else:
+            x_ini = np.array([0., 0., 0.5])
+            omega_ini = self.forward_runs_helper(x_ini)
+            variable_values = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/var_vals.npy')
+            x_opt = variable_values[-1]
+            omega_opt = self.forward_runs_helper(x_opt)
+            np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/omega_ini.npy', omega_ini)
+            np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/omega_opt.npy', omega_opt)
+            print(f"x_opt={x_opt}")
+    
+        self.forward_runs_plot(omega_ini, 'ini')
+        self.forward_runs_plot(omega_opt, 'opt')
+
 
     def debug(self):
         h = np.array([0, 1e-5, 0])
@@ -265,7 +284,9 @@ class Wave(RVE):
 
 
 def main():
-    pde = Wave(domain='rve', case='wave', mode='band', problem='post-processing')    
+    pde = Wave(domain='rve', case='wave', mode='undeformed', problem='forward')    
+    pde.run()
+    pde = Wave(domain='rve', case='wave', mode='deformed', problem='forward')    
     pde.run()
 
 

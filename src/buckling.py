@@ -16,14 +16,14 @@ class Buckling(RVE):
 
     def opt_prepare(self, x=None):
         if self.mode == 'poreA':
-            self.x_initial = np.array([0., 0., 0.5])
+            self.x_ini = np.array([0., 0., 0.5])
             self.bounds = np.array([[0., 0.], [0., 0.], [0.4, 0.6]])
             self.selected_eigen_number = 2
             self.critical_lmd = 0.02
             self.indices = [2, 3, 5]
             self.ylim = (-6000, 11000)
         elif self.mode == 'poreB':
-            self.x_initial = np.array([-0.2, 0.1, 0.5])
+            self.x_ini = np.array([-0.2, 0.1, 0.5])
             self.bounds = np.array([[-0.2, -0.2], [0.1, 0.1], [0.4, 0.6]])  
             self.selected_eigen_number = 2 
             self.critical_lmd = 0.03 
@@ -32,11 +32,11 @@ class Buckling(RVE):
         else:
             raise ValueError(f'Unknown mode: {self.mode}')            
 
-        self.maxiter = 100
+        self.maxstep = 100
         print(f"Opt prepare...")
         self.build_mesh()
         if x is None:
-            self.move_mesh(self.x_initial)
+            self.move_mesh(self.x_ini)
         else:
             self.move_mesh(x)
         self.compute_objective_helper(lmd=0., initial=True)
@@ -85,7 +85,7 @@ class Buckling(RVE):
                 vtkfile_eigen = fe.File(f'data/pvd/{self.domain}/{self.case}/{self.mode}/{self.problem}/eigen.pvd')
                 eigen_u = fe.Function(self.V, name='e')
                 for eigen_vec in self.eigen_vecs:
-                    eigen_u.vector()[:] = eigen_vec
+                    eigen_u.vector()[:] = 2 * eigen_vec # For better visualization, we scale it by a factor of two
                     if self.move_mesh_flag:
                         vtkfile_eigen << eigen_u
                     else:  
@@ -156,7 +156,7 @@ class Buckling(RVE):
         return all_eigen_vals, selected_eigen_vals
 
 
-    def forward_runs_plot_eigenvalues(self, all_eigen_vals, name):
+    def forward_runs_plot(self, all_eigen_vals, name):
         markers = ['o', 's', '^']
         colors = ['red', 'blue', 'green']
         fig = plt.figure()
@@ -166,8 +166,8 @@ class Buckling(RVE):
         plt.plot(self.lmds, np.zeros_like(self.lmds), color='black')
         plt.tick_params(labelsize=14)
         plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
-        plt.xlabel("$\lambda$ (compression)", fontsize=16)
-        plt.ylabel("$\omega^2$ (eigenvalue)", fontsize=16)
+        plt.xlabel(r'$\lambda$', fontsize=16)
+        plt.ylabel(r'$\omega^2$', fontsize=16)
         # plt.legend()
         # plt.yticks(rotation=90)
         fig.savefig(f'data/pdf/{self.domain}/{self.case}/{self.mode}_{name}_eigens.pdf', bbox_inches='tight')
@@ -176,18 +176,13 @@ class Buckling(RVE):
     def forward_runs(self):
         self.opt_prepare()
         initial_all_eigen_vals, initial_selected_eigen_vals = self.forward_runs_helper()
-
-        x_files = glob.glob(f'data/numpy/{self.domain}/{self.case}/{self.mode}/x_*')
-        x_opt = np.load(sorted(x_files)[-1])
+        variable_values = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/var_vals.npy')
+        x_opt = variable_values[-1]
         self.opt_prepare(x_opt)
         opt_all_eigen_vals, opt_selected_eigen_vals = self.forward_runs_helper()
 
-        self.forward_runs_plot_eigenvalues(initial_all_eigen_vals, 'ini')
-        self.forward_runs_plot_eigenvalues(opt_all_eigen_vals, 'opt')
-
-        self.visualize_results()
-        
-        plt.show()
+        self.forward_runs_plot(initial_all_eigen_vals, 'ini')
+        self.forward_runs_plot(opt_all_eigen_vals, 'opt')
 
 
     def debug(self):
@@ -222,11 +217,36 @@ class Buckling(RVE):
         print(f"finite difference: {(f_h - f)/h[-1]}")
 
 
+    def visualize_results(self):
+        object_values = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/obj_vals.npy')
+        variable_values = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/var_vals.npy')
+        fig, ax1 = plt.subplots()
+
+        ax1.set_xlabel('Optimization step', fontsize=14)
+        ax1.set_ylabel('Objective value', fontsize=14)
+        ax1.plot(object_values, linestyle='-', marker='o', color='black', label='Objective value')
+        ax1.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+        ax1.tick_params(labelsize=14)
+        ax1.set_ylim((-5*1e4, 1.2*1e6))
+        ax1.legend(fontsize=16, frameon=False, loc='upper left')
+
+        ax2 = ax1.twinx()   
+        ax2.set_ylabel(r'$\phi_0$', fontsize=14)   
+        ax2.plot(variable_values[:, -1], linestyle='-', marker='s', color='red', label=r'$\phi_0$')
+        ax2.tick_params(labelsize=14)
+        ax2.legend(fontsize=16, frameon=False, loc='upper right')
+        ax2.set_ylim((0.39, 0.52))
+
+        fig.savefig(f'data/pdf/{self.domain}/{self.case}/{self.mode}_obj.pdf', bbox_inches='tight')
+
 
 def main():
-    pde = Buckling(domain='rve', case='buckling', mode='poreB', problem='inverse')    
+    # pde = Buckling(domain='rve', case='buckling', mode='poreA', problem='inverse')    
+    # pde.run()
+    pde = Buckling(domain='rve', case='buckling', mode='poreB', problem='forward')    
     pde.run()
 
 
 if __name__ == '__main__':
-    main()
+    main()    
+    plt.show()

@@ -44,10 +44,10 @@ class PDECO(object):
     def visualize_results(self):
         object_values = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/obj_vals.npy')
         fig = plt.figure()
-        plt.plot(object_values, linestyle='--', marker='o', color='black')
+        plt.plot(object_values, linestyle='-', marker='o', color='black')
         plt.tick_params(labelsize=14)
-        plt.xlabel("$N$ (Optimization steps)", fontsize=14)
-        plt.ylabel("$J$ (Objective)", fontsize=14)
+        plt.xlabel('Optimization step', fontsize=14)
+        plt.ylabel('Objective value', fontsize=14)
         plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
         fig.savefig(f'data/pdf/{self.domain}/{self.case}/{self.mode}_obj.pdf', bbox_inches='tight')
 
@@ -59,7 +59,10 @@ class RVE(PDECO):
         self.mode = mode
         self.young_modulus = 1e3
         self.poisson_ratio = 0.3
+        self.shear_mod = self.young_modulus / (2 * (1 + self.poisson_ratio))
+        self.bulk_mod = self.young_modulus / (3 * (1 - 2*self.poisson_ratio))
         self.rho = 1.
+        self.cT = np.sqrt(self.shear_mod/self.rho)
         self.move_mesh_flag = False
         super(RVE, self).__init__(problem)
 
@@ -231,14 +234,22 @@ class RVE(PDECO):
         print(f"###################################################################")
 
         self.object_values = []
+        self.design_variables = []
 
         vtkfile_mesh = fe.File(f'data/pvd/{self.domain}/{self.case}/{self.mode}/{self.problem}/u.pvd')
         if self.mode == 'von-mises':
             vtkfile_stress = fe.File(f'data/pvd/{self.domain}/{self.case}/{self.mode}/{self.problem}/s.pvd')
 
         def objective(x):
-            print(f"x = {x}")
+            # Use Python exception for an early stop seems to be a bad idea.
+            # This should have been done by a callback function that terminates optimization upon returning true.
+            # See the issue here https://github.com/scipy/scipy/issues/9412
+            # I don't understand why the issus is still there?
+            print(f'objective function is called for {objective.count} times')
+            if objective.count > self.maxstep:
+                raise ValueError('Optimization exceeds a maximum number of steps, terminate it.')
 
+            print(f"x = {x}")
             self.build_mesh()
             self.move_mesh(x)
             self.compute_objective()
@@ -251,9 +262,9 @@ class RVE(PDECO):
                 objective_aux.append(max_vm_stress)
                 print(f"max_vm_stress = {max_vm_stress}")
 
-            np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/x_{objective.count:03}.npy', x)
             objective.count += 1
             self.object_values.append(self.obj_val)
+            self.design_variables.append(x)
             return self.obj_val
 
         objective.count = 0
@@ -263,28 +274,25 @@ class RVE(PDECO):
             control = da.Control(self.delta)
             dJdm = da.compute_gradient(self.obj_val_AD, control)
             da.set_working_tape(da.Tape())
-
             print(f"dJdm = {dJdm.values()}")
-
             return dJdm.values()
-
-        # self.x_initial = np.array([-0.2, 0.1, 0.5])
-        # bounds = np.array([[-0.2, 0.], [-0.1, 0.1], [0.45, 0.55]])
-        # self.bounds = np.array([[-0.2, -0.2], [0.1, 0.1], [0.4, 0.6]])
-        # bounds = np.array([[0., 0.], [0., 0.], [0.5, 0.5]])
 
         self.opt_prepare()
 
-        options = {'maxiter': self.maxiter, 'disp': True}  # CG or L-BFGS-B or Newton-CG
-        res = opt.minimize(fun=objective,
-                           x0=self.x_initial,
-                           method='L-BFGS-B',
-                           jac=derivative,
-                           bounds=self.bounds,
-                           callback=None,
-                           options=options)
+        options = {'maxiter': 100, 'disp': True}  # CG or L-BFGS-B or Newton-CG
+        try:
+            res = opt.minimize(fun=objective,
+                               x0=self.x_ini,
+                               method='L-BFGS-B',
+                               jac=derivative,
+                               bounds=self.bounds,
+                               callback=None,
+                               options=options)
+        except ValueError as e:
+            pass
 
         np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/obj_vals.npy', np.array(self.object_values))
+        np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/var_vals.npy', np.array(self.design_variables))
         if self.mode == 'von-mises':
             np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/vm_stress.npy', np.array(objective_aux))
 
@@ -299,7 +307,7 @@ class RVE(PDECO):
         self.v = fe.TestFunction(self.V)
 
         mapped_J = mapped_J_wrapper(self.s)
-        energy_density, self.PK_stress, self.L, self.sigma_v = NeoHookeanEnergyFluctuation(self.s, self.u, self.young_modulus, self.poisson_ratio, True, H)
+        energy_density, self.PK_stress, self.L, self.sigma_v = NeoHookeanEnergyFluctuation(self.s, self.u, self.shear_mod, self.bulk_mod, True, H)
         self.E = energy_density * mapped_J * fe.dx
         self.bcs = [da.DirichletBC(self.V, da.Constant((0., 0.)), self.corner, method='pointwise')]
         dE = fe.derivative(self.E, self.u, self.v)
@@ -318,8 +326,3 @@ class RVE(PDECO):
             self.disp = fe.project(self.s + self.u + fe.dot(H, X), self.V_non_periodic)
 
         self.disp.rename("u", "u")
-
-
-        # if self.problem == 'forward':
-        #     xdmf_file_sols = fe.XDMFFile(f'data/xdmf/{self.case}/{self.problem}/sols.xdmf')    
-        #     xdmf_file_sols.write(self.u)

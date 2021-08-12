@@ -34,10 +34,7 @@ def RightCauchyGreen(F):
     return F.T * F
 
 
-def NeoHookeanEnergyFluctuation(mesh_disp, variable, young_modulus, poisson_ratio, fluctuation, H_list=None):
-    shear_mod = young_modulus / (2 * (1 + poisson_ratio))
-    bulk_mod = young_modulus / (3 * (1 - 2*poisson_ratio))
-
+def NeoHookeanEnergyFluctuation(mesh_disp, variable, shear_mod, bulk_mod, fluctuation, H_list=None):
     grad = mapped_grad_wrapper(mesh_disp)
     if fluctuation:
         F = DeformationGradientFluctuation(grad, variable, H_list)
