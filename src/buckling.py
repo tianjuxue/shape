@@ -241,10 +241,10 @@ class Buckling(RVE):
 
 
 def main():
-    # pde = Buckling(domain='rve', case='buckling', mode='poreA', problem='inverse')    
-    # pde.run()
-    pde = Buckling(domain='rve', case='buckling', mode='poreB', problem='forward')    
+    pde = Buckling(domain='rve', case='buckling', mode='poreA', problem='inverse')    
     pde.run()
+    # pde = Buckling(domain='rve', case='buckling', mode='poreB', problem='forward')    
+    # pde.run()
 
 
 if __name__ == '__main__':

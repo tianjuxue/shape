@@ -59,7 +59,7 @@ class Auxetic(RVE):
         self.obj_val_AD = self.J
 
 
-    def forward_runs_plot_energy(self, boundary_disp, energy):
+    def forward_runs_plot_energy(self, boundary_disp, energy, after_opt):
         fig = plt.figure()
         plt.plot(boundary_disp, energy/(self.L0*2)**2/self.young_modulus, marker='o', color='black')
         plt.tick_params(labelsize=14)
@@ -74,26 +74,35 @@ class Auxetic(RVE):
         plt.ylabel(r'$\overline{W}/E$', fontsize=16)
         # plt.legend()
         # plt.yticks(rotation=90)
-        fig.savefig(f'data/pdf/{self.domain}/{self.case}/{self.mode}_energy.pdf', bbox_inches='tight')
+        fig.savefig(f'data/pdf/{self.domain}/{self.case}/{self.mode}_energy_after_opt_{after_opt}.pdf', bbox_inches='tight')
 
 
     def forward_runs(self):
         variable_values = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/var_vals.npy')
         x_opt = variable_values[-1]
+        after_opt = False
+        if self.mode == 'normal':
+            x_rep = np.array([0., 0., 0.5])
+        elif self.mode == 'shear':
+            x_rep = np.array([-0.2, 0.1, 0.5])
+        else:
+            raise ValueError(f'Unknown mode: {self.mode}')   
+        x = x_opt if after_opt else x_rep
 
         self.build_mesh()
-        self.move_mesh(x_opt)
+        self.move_mesh(x)
         vtkfile_mesh = fe.File(f'data/pvd/{self.domain}/{self.case}/{self.mode}/{self.problem}/u.pvd')
 
-        cache = True
+        cache = False
         if cache:
-            boundary_disp = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/disp.npy')
-            energy = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/energy.npy')
-            force = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/force.npy')
+            boundary_disp = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/disp_after_opt_{after_opt}.npy')
+            energy = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/energy_after_opt_{after_opt}.npy')
+            force = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/force_after_opt_{after_opt}.npy')
         else:
             energy = []
             force = []
             if self.mode == 'normal':
+                # TODO(Tianju): -0.08 is twice -0.04, make that a variable rather than a magic number!
                 boundary_disp = np.linspace(0, -0.08, 11)
                 for H11 in boundary_disp:
                     H = fe.as_matrix([[H11, 0.], [0., -0.1]])
@@ -104,7 +113,7 @@ class Auxetic(RVE):
                     print(f"H11 = {H11}")
                     print(f"e = {e}")
             elif self.mode == 'shear':
-                boundary_disp = np.linspace(0, 0.6, 11)
+                boundary_disp = np.linspace(-0.5, 0.5, 21)
                 for H12 in boundary_disp:
                     H = fe.as_matrix([[0., H12], [0., -0.125]])
                     self.RVE_solve(H)
@@ -124,20 +133,20 @@ class Auxetic(RVE):
             else:
                 raise ValueError(f'Unknown mode: {self.mode}')
 
-            np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/disp.npy', boundary_disp)
+            np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/disp_after_opt_{after_opt}.npy', boundary_disp)
 
             if len(energy) > 0:
                 energy = np.array(energy)
-                np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/energy.npy', energy)
+                np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/energy_after_opt_{after_opt}.npy', energy)
 
             if len(force) > 0:
                 force = np.array(force)
-                np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/force.npy', force)
+                np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/force_after_opt_{after_opt}.npy', force)
  
             print(f'energy = {energy}')
             print(f'force = {force}')
 
-        self.forward_runs_plot_energy(boundary_disp, energy)
+        self.forward_runs_plot_energy(boundary_disp, energy, after_opt)
 
 
     def debug(self):
@@ -145,11 +154,9 @@ class Auxetic(RVE):
 
 
 def main():
-    # pde = RVE(case='rve', problem='inverse', mode='normal')
+    # pde = Auxetic(domain='rve', case='auxetic', mode='shear', problem='post-processing')    
     # pde.run()
-    # modes = ['normal', 'shear', 'max_energy', 'min_energy', 'von-mises']
-
-    pde = Auxetic(domain='rve', case='auxetic', mode='shear', problem='post-processing')    
+    pde = Auxetic(domain='rve', case='auxetic', mode='normal', problem='forward')    
     pde.run()
 
 

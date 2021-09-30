@@ -20,7 +20,7 @@ class Wave(RVE):
 
 
     def opt_prepare(self):
-        self.x_ini = np.array([0., 0., 0.5])
+        self.x_ini = np.array([0., 0., 0.43])
         self.bounds = np.array([[-0.2, 0.], [-0.1, 0.1], [0.4, 0.6]])
         self.maxstep = 20
         if self.mode == 'undeformed':
@@ -219,13 +219,15 @@ class Wave(RVE):
 
         low_omega = np.max(omega[:, :self.cut_len])
         high_omega = np.min(omega[:, self.cut_len:])
+        bg = high_omega - low_omega
+        print(f'low_normalized_frequency = {low_omega}, high_normalized_frequency = {high_omega}, band_gap = {bg}')
         plt.ylim(self.ylim)
         plt.tick_params(labelsize=14)
         plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
         plt.xticks([0, 10, 20, 30], [r'$G$', r'$X$', r'$M$', r'$G$'])
-        plt.xlabel(r'$\boldsymbol{k}$', fontsize=16)
-        plt.ylabel(r'$\frac{\omega L_0}{\pi c_T} $', fontsize=24)
-        rect = plt.Rectangle((0, low_omega), 30, high_omega - low_omega, facecolor='black', alpha=0.3)
+        plt.xlabel(r'$\boldsymbol{k}$', fontsize=20)
+        plt.ylabel(r'$\overline{\omega}$', fontsize=18)
+        rect = plt.Rectangle((0, low_omega), 30, bg, facecolor='black', alpha=0.3)
         ax.add_patch(rect)
         fig.savefig(f'data/pdf/{self.domain}/{self.case}/{self.mode}_{name}_w.pdf', bbox_inches='tight')
   
@@ -237,16 +239,18 @@ class Wave(RVE):
         if cache:
             omega_ini = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/omega_ini.npy')
             omega_opt = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/omega_opt.npy')
-
         else:
-            x_ini = np.array([0., 0., 0.5])
-            omega_ini = self.forward_runs_helper(x_ini)
+            omega_ini = self.forward_runs_helper(self.x_ini)
             variable_values = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/var_vals.npy')
             x_opt = variable_values[-1]
             omega_opt = self.forward_runs_helper(x_opt)
             np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/omega_ini.npy', omega_ini)
             np.save(f'data/numpy/{self.domain}/{self.case}/{self.mode}/omega_opt.npy', omega_opt)
             print(f"x_opt={x_opt}")
+
+            # Asked by Sheng Mao: output the optimized RVE shape (no deformation)
+            vtkfile_u = fe.File(f'data/pvd/{self.domain}/{self.case}/{self.mode}/{self.problem}/u.pvd')
+            vtkfile_u << self.s
     
         self.forward_runs_plot(omega_ini, 'ini')
         self.forward_runs_plot(omega_opt, 'opt')
@@ -284,8 +288,8 @@ class Wave(RVE):
 
 
 def main():
-    pde = Wave(domain='rve', case='wave', mode='undeformed', problem='forward')    
-    pde.run()
+    # pde = Wave(domain='rve', case='wave', mode='undeformed', problem='post-processing')    
+    # pde.run()
     pde = Wave(domain='rve', case='wave', mode='deformed', problem='forward')    
     pde.run()
 

@@ -81,6 +81,7 @@ def plot_pores():
     plot_pores_matrix('frame', np.linspace(-0.2, 0, 3), np.linspace(-0.1, 0.1, 3))
     plot_pores_matrix('macro', np.linspace(0., 0, 6), np.linspace(0., 0., 6))
     plot_pores_matrix('micro', np.linspace(0., 0, 2), np.linspace(0., 0., 2))
+    plot_pores_matrix('single', np.linspace(0., 0, 1), np.linspace(0., 0., 1))
 
 
 ###########################################################################
@@ -128,6 +129,6 @@ def output_stl():
 
 
 if __name__ == '__main__':
-    # plot_pores()
-    plot_configs()
-    plt.show()
+    plot_pores()
+    # plot_configs()
+    # plt.show()
