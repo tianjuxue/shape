@@ -167,7 +167,7 @@ class Buckling(RVE):
         plt.tick_params(labelsize=14)
         plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
         plt.xlabel(r'$\lambda$', fontsize=16)
-        plt.ylabel(r'$\omega^2$', fontsize=16)
+        plt.ylabel(r'$\mu$', fontsize=16)
         # plt.legend()
         # plt.yticks(rotation=90)
         fig.savefig(f'data/pdf/{self.domain}/{self.case}/{self.mode}_{name}_eigens.pdf', bbox_inches='tight')
@@ -241,10 +241,10 @@ class Buckling(RVE):
 
 
 def main():
-    pde = Buckling(domain='rve', case='buckling', mode='poreA', problem='inverse')    
+    pde = Buckling(domain='rve', case='buckling', mode='poreA', problem='forward')    
     pde.run()
-    # pde = Buckling(domain='rve', case='buckling', mode='poreB', problem='forward')    
-    # pde.run()
+    pde = Buckling(domain='rve', case='buckling', mode='poreB', problem='forward')    
+    pde.run()
 
 
 if __name__ == '__main__':
