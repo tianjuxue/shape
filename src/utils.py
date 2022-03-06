@@ -74,12 +74,12 @@ def plot_pores_matrix(name, c1_arr, c2_arr):
     ax.add_collection(p)
     plt.axis('equal')
     plt.axis('off')
-    fig.savefig(f'data/png/rve/{name}.png', bbox_inches='tight')
+    fig.savefig(f'data/pdf/rve/rve/{name}.pdf', bbox_inches='tight')
 
 
 def plot_pores():
     plot_pores_matrix('frame', np.linspace(-0.2, 0, 3), np.linspace(-0.1, 0.1, 3))
-    plot_pores_matrix('macro', np.linspace(0., 0, 6), np.linspace(0., 0., 6))
+    plot_pores_matrix('macro', np.linspace(0., 0, 12), np.linspace(0., 0., 12))
     plot_pores_matrix('micro', np.linspace(0., 0, 2), np.linspace(0., 0., 2))
     plot_pores_matrix('single', np.linspace(0., 0, 1), np.linspace(0., 0., 1))
 
@@ -87,9 +87,9 @@ def plot_pores():
 ###########################################################################
 # plot meshes to indicate different configurations
 
-def show_solution(path, name):
+def show_solution(path_in, path_out):
     reader = vtk.vtkXMLUnstructuredGridReader()
-    reader.SetFileName(path)
+    reader.SetFileName(path_in)
     reader.Update()
     data = reader.GetOutput()
     points = data.GetPoints()
@@ -106,18 +106,18 @@ def show_solution(path, name):
     plt.triplot(x_[:, 0], x_[:, 1], tri, color='black', alpha=1., linewidth=0.25)
     plt.gca().set_aspect('equal')
     plt.axis('off')
-    fig.savefig(f'data/pdf/rve/dummy/{name}.pdf', bbox_inches='tight')
+    fig.savefig(path_out, bbox_inches='tight')
 
     return x[:, :2], x_[:, :2]
 
 
 def plot_configs():
-    path_ref = f'data/pvd/rve/dummy/bc/forward/configs000000.vtu'
-    show_solution(path_ref, 'ref')
-    path_ref = f'data/pvd/rve/dummy/bc/forward/configs000001.vtu'
-    show_solution(path_ref, 'lag')
-    path_ref = f'data/pvd/rve/dummy/bc/forward/configs000002.vtu'
-    show_solution(path_ref, 'eul')
+    show_solution(f'data/pvd/rve/dummy/bc/forward/configs000000.vtu', f'data/pdf/rve/dummy/ref.pdf')
+    show_solution(f'data/pvd/rve/dummy/bc/forward/configs000001.vtu', f'data/pdf/rve/dummy/lag.pdf')
+    show_solution(f'data/pvd/rve/dummy/bc/forward/configs000002.vtu', f'data/pdf/rve/dummy/eul.pdf')
+    show_solution(f'data/pvd/rve/map/test/forward/u_ref000000.vtu', f'data/pdf/rve/map/ref.pdf')   
+    show_solution(f'data/pvd/rve/map/test/forward/u_lag000000.vtu', f'data/pdf/rve/map/lag.pdf')  
+    show_solution(f'data/pvd/rve/map/test/forward/u_eul000000.vtu', f'data/pdf/rve/map/eul.pdf')  
 
 
 ###########################################################################

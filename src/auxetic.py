@@ -80,7 +80,7 @@ class Auxetic(RVE):
     def forward_runs(self):
         variable_values = np.load(f'data/numpy/{self.domain}/{self.case}/{self.mode}/var_vals.npy')
         x_opt = variable_values[-1]
-        after_opt = False
+        after_opt = True
         if self.mode == 'normal':
             x_rep = np.array([0., 0., 0.5])
         elif self.mode == 'shear':
@@ -156,7 +156,7 @@ class Auxetic(RVE):
 def main():
     # pde = Auxetic(domain='rve', case='auxetic', mode='shear', problem='post-processing')    
     # pde.run()
-    pde = Auxetic(domain='rve', case='auxetic', mode='normal', problem='forward')    
+    pde = Auxetic(domain='rve', case='auxetic', mode='shear', problem='forward')    
     pde.run()
 
 

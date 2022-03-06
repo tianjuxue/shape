@@ -240,13 +240,30 @@ class Buckling(RVE):
         fig.savefig(f'data/pdf/{self.domain}/{self.case}/{self.mode}_obj.pdf', bbox_inches='tight')
 
 
+    def show_animation(self):
+        '''
+        出一下体现出pattern transformation的视频，用于FPO slides
+        '''
+        x = np.array([0., 0., 0.5])
+        self.build_mesh()
+        self.move_mesh(x)
+        vtkfile_mesh = fe.File(f'data/pvd/{self.domain}/{self.case}/{self.mode}/{self.problem}/u.pvd')
+        lmds = np.linspace(0, -0.05, 11)
+        for lmd in lmds:
+            H = fe.as_matrix([[lmd, 0.], [0., lmd]])
+            self.RVE_solve(H)
+            vtkfile_mesh << self.disp
+
+
 def main():
-    pde = Buckling(domain='rve', case='buckling', mode='poreA', problem='forward')    
-    pde.run()
-    pde = Buckling(domain='rve', case='buckling', mode='poreB', problem='forward')    
-    pde.run()
+    # pde = Buckling(domain='rve', case='buckling', mode='poreA', problem='forward')    
+    # pde.run()
+    # pde = Buckling(domain='rve', case='buckling', mode='poreB', problem='forward')    
+    # pde.run()
+    pde = Buckling(domain='rve', case='buckling', mode='poreA', problem='animation')    
+    pde.show_animation()
 
 
 if __name__ == '__main__':
     main()    
-    plt.show()
+    # plt.show()
